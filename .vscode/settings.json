@@ -1,0 +1,18 @@
+{
+  "rust-analyzer.checkOnSave.command": "clippy",
+  "cSpell.words": [
+    "canonicalize",
+    "dbus",
+    "indoc",
+    "netbr",
+    "netdev",
+    "Networkd",
+    "oneshot",
+    "rusqlite",
+    "thiserror",
+    "tinyvmi",
+    "tvbr",
+    "vmservice",
+    "zbus"
+  ]
+}

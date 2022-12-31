@@ -1,0 +1,8 @@
+[workspace]
+
+members = ["tinyvmm", "vmm_entity"]
+
+# lifted off https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/Cargo.toml#L50
+[patch.crates-io]
+kvm-bindings = { git = "https://github.com/cloud-hypervisor/kvm-bindings", branch = "ch-v0.6.0-tdx" }
+versionize_derive = { git = "https://github.com/cloud-hypervisor/versionize_derive", branch = "ch" }

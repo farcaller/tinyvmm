@@ -6,7 +6,10 @@ use crate::{
 };
 use clap::{Parser, Subcommand};
 use log::debug;
-use tokio::{signal, sync::mpsc};
+use tokio::{
+    signal::{self, unix::SignalKind},
+    sync::mpsc,
+};
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
@@ -227,11 +230,21 @@ async fn run_unitserver(reconcile_delay: u64) -> eyre::Result<()> {
 
     let worker = tvm::unitserver::main(config, terminated_send);
     let handle = tokio::spawn(worker);
-    let shutdown = signal::ctrl_c();
+    let sig_int = signal::ctrl_c();
+    let mut sig_quit = signal::unix::signal(SignalKind::quit())?;
+    let mut sig_term = signal::unix::signal(SignalKind::terminate())?;
 
     tokio::select! {
-        _ = shutdown => {
+        _ = sig_int => {
             debug!("SIGINT received; starting forced shutdown");
+            shutdown_send.send(()).await?;
+        },
+        _ = sig_quit.recv() => {
+            debug!("SIGQUIT received; starting forced shutdown");
+            shutdown_send.send(()).await?;
+        },
+        _ = sig_term.recv() => {
+            debug!("SIGTERM received; starting graceful shutdown");
             shutdown_send.send(()).await?;
         },
         _ = handle => {

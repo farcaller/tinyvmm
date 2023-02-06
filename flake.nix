@@ -34,6 +34,7 @@
           commonArgs = {
             inherit buildInputs;
             src = craneLib.cleanCargoSource ./.;
+            pname = "tinyvmm";
           };
           cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
             pname = "tinyvmm-deps";

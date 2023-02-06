@@ -23,18 +23,23 @@
           fenixPkgs = fenix.packages.${system}.${rustVersion};
           toolchain = fenixPkgs.toolchain;
           craneLib = crane.lib.${system}.overrideToolchain toolchain;
-          runtimeDeps = with pkgs; [
+          runtimeInputs = with pkgs; [
             cloud-hypervisor
             nftables
           ];
+          buildInputs = with pkgs; [
+            mold
+            clang
+          ];
           commonArgs = {
+            inherit buildInputs;
             src = craneLib.cleanCargoSource ./.;
           };
           cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
             pname = "tinyvmm-deps";
           });
           tinyvmmClippy = craneLib.cargoClippy (commonArgs // {
-            inherit cargoArtifacts;
+            inherit cargoArtifacts ;
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
           });
           tinyvmmCoverage = craneLib.cargoTarpaulin (commonArgs // {
@@ -60,12 +65,10 @@
                   packages = with pkgs; [
                     sqlite
                     rustfmt
-                    mold
-                    clang
                     cargo-whatfeatures
                     cargo-watch
                     fenixPkgs.clippy
-                  ] ++ runtimeDeps;
+                  ] ++ runtimeInputs ++ buildInputs;
                 }
               )
             ];

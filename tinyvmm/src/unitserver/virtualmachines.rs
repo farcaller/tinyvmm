@@ -5,10 +5,10 @@ use crate::{
     systemd,
 };
 
-pub async fn reconcile() -> eyre::Result<()> {
+pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
     let self_exe = &std::env::args().next().unwrap();
 
-    let vms = VirtualMachine::list()?;
+    let vms = VirtualMachine::list(runtime_dir)?;
 
     // generate the units for existing vms and check the diffs
     // if there are any diffs, commit, daemon-reload and start them

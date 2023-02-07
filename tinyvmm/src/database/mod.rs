@@ -13,7 +13,6 @@ pub mod error;
 pub mod metadata;
 pub mod virtual_machine;
 
-const DATA_DIR: &str = "/var/lib/tinyvmm";
 const DB_PATH: &str = "db.sqlite";
 
 fn regexp_with_auxiliary(ctx: &Context<'_>) -> rusqlite::Result<bool> {
@@ -35,8 +34,8 @@ fn regexp_with_auxiliary(ctx: &Context<'_>) -> rusqlite::Result<bool> {
     Ok(is_match)
 }
 
-fn get_connection() -> rusqlite::Result<Connection> {
-    let conn = Connection::open(PathBuf::from(DATA_DIR).join(DB_PATH))?;
+fn get_connection(runtime_dir: &str) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(PathBuf::from(runtime_dir).join(DB_PATH))?;
 
     conn.create_scalar_function(
         "regexp",
@@ -71,8 +70,8 @@ fn get_connection() -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-pub fn get_entity(kind: &str, name: &str) -> rusqlite::Result<Value> {
-    let conn = get_connection()?;
+pub fn get_entity(runtime_dir: &str, kind: &str, name: &str) -> rusqlite::Result<Value> {
+    let conn = get_connection(runtime_dir)?;
 
     let key = format!("{}/{}", kind.to_lowercase(), name.to_lowercase());
 
@@ -84,8 +83,8 @@ pub fn get_entity(kind: &str, name: &str) -> rusqlite::Result<Value> {
     })
 }
 
-pub fn delete_entity(kind: &str, name: &str) -> rusqlite::Result<()> {
-    let conn = get_connection()?;
+pub fn delete_entity(runtime_dir: &str, kind: &str, name: &str) -> rusqlite::Result<()> {
+    let conn = get_connection(runtime_dir)?;
 
     let mut stmt = conn.prepare("DELETE FROM entities WHERE key = ?1")?;
 
@@ -96,8 +95,8 @@ pub fn delete_entity(kind: &str, name: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn get_kind(kind: &str) -> rusqlite::Result<Vec<Value>> {
-    let conn = get_connection()?;
+pub fn get_kind(runtime_dir: &str, kind: &str) -> rusqlite::Result<Vec<Value>> {
+    let conn = get_connection(runtime_dir)?;
 
     let mut stmt = conn.prepare("SELECT data FROM entities WHERE kind = ?1")?;
 
@@ -116,8 +115,8 @@ pub fn get_kind(kind: &str) -> rusqlite::Result<Vec<Value>> {
     Ok(entities)
 }
 
-pub fn create_entity(e: Value) -> rusqlite::Result<()> {
-    let conn = get_connection()?;
+pub fn create_entity(runtime_dir: &str, e: Value) -> rusqlite::Result<()> {
+    let conn = get_connection(runtime_dir)?;
 
     let mut stmt = conn.prepare("INSERT INTO entities (data) VALUES (?1)")?;
 

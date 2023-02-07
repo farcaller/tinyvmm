@@ -3,9 +3,9 @@ use crate::{
     systemd::bridge::{create_bridge, create_bridge_network, Lease},
 };
 
-pub async fn reconcile() -> eyre::Result<()> {
-    let bridges = Bridge::list()?;
-    let vms = VirtualMachine::list()?;
+pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
+    let bridges = Bridge::list(runtime_dir)?;
+    let vms = VirtualMachine::list(runtime_dir)?;
 
     // generate the units for existing bridges and check the diffs
     // if there are any diffs, commit, daemon-reload and start them

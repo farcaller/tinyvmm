@@ -7,27 +7,27 @@ pub trait Entity {
     const API_VERSION: &'static str;
     type Type: DeserializeOwned;
 
-    fn get<T>(name: T) -> Result<Self::Type, super::error::Error>
+    fn get<T>(runtime_dir: &str, name: T) -> Result<Self::Type, super::error::Error>
     where
         T: AsRef<str>,
     {
-        let entity = get_entity(Self::KIND, name.as_ref())?;
+        let entity = get_entity(runtime_dir, Self::KIND, name.as_ref())?;
         let unwrapped: Self::Type = serde_json::value::from_value(entity)?;
 
         Ok(unwrapped)
     }
 
-    fn delete<T>(name: T) -> Result<(), super::error::Error>
+    fn delete<T>(runtime_dir: &str, name: T) -> Result<(), super::error::Error>
     where
         T: AsRef<str>,
     {
-        delete_entity(Self::KIND, name.as_ref())?;
+        delete_entity(runtime_dir, Self::KIND, name.as_ref())?;
 
         Ok(())
     }
 
-    fn list() -> Result<Vec<Self::Type>, super::error::Error> {
-        let entities = get_kind(Self::KIND)?;
+    fn list(runtime_dir: &str) -> Result<Vec<Self::Type>, super::error::Error> {
+        let entities = get_kind(runtime_dir, Self::KIND)?;
 
         let mut vms = vec![];
         for e in entities {
@@ -38,12 +38,12 @@ pub trait Entity {
         Ok(vms)
     }
 
-    fn create(&self) -> Result<(), super::error::Error>
+    fn create(&self, runtime_dir: &str) -> Result<(), super::error::Error>
     where
         Self: Serialize,
     {
         let val = serde_json::value::to_value(self)?;
-        create_entity(val)?;
+        create_entity(runtime_dir, val)?;
         Ok(())
     }
 }

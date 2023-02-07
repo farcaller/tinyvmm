@@ -16,6 +16,8 @@ use tokio::{
 struct Cli {
     #[clap(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
+    #[clap(long, default_value = "/var/lib/tinyvmm")]
+    runtime_dir: String,
 
     #[command(subcommand)]
     command: Commands,
@@ -113,7 +115,7 @@ enum NetworkdCommand {
     Describe { name: String },
 }
 
-async fn internal_command(cmd: &InternalCommands) -> eyre::Result<()> {
+async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Result<()> {
     use BridgeCommands as br;
     use InternalCommands::*;
     use TapCommands as tap;
@@ -126,7 +128,7 @@ async fn internal_command(cmd: &InternalCommands) -> eyre::Result<()> {
                     dns_zone,
                 },
         } => {
-            let vms = VirtualMachine::list()?;
+            let vms = VirtualMachine::list(runtime_dir)?;
             let mut leases = vec![];
             for vm in vms {
                 leases.push(tvm::systemd::bridge::Lease {
@@ -162,18 +164,18 @@ async fn internal_command(cmd: &InternalCommands) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn systemd_command(cmd: &SystemdCommands) -> eyre::Result<()> {
+async fn systemd_command(cmd: &SystemdCommands, runtime_dir: &str) -> eyre::Result<()> {
     use SystemdCommands::*;
     match cmd {
         BootstrapPre { name } => {
             let tap_name = tvm::ch::get_vm_tap_name(name);
 
-            let vm = VirtualMachine::get(name)?;
+            let vm = VirtualMachine::get(runtime_dir, name)?;
 
             tvm::systemd::tap::create_tap(&tap_name, &vm.spec.mac).await?;
             tvm::systemd::tap::create_tap_network(&tap_name, "tvbr0", &vm.spec.mac).await?;
         }
-        BootstrapPost { name } => tvm::ch::bootstrap::bootstrap_vm(name).await?,
+        BootstrapPost { name } => tvm::ch::bootstrap::bootstrap_vm(runtime_dir, name).await?,
         Teardown { name } => tvm::systemd::destroy_netdev(&tvm::ch::get_vm_tap_name(name)).await?,
     }
     Ok(())
@@ -204,28 +206,29 @@ async fn networkd_command(cmd: &NetworkdCommand) -> eyre::Result<()> {
     }
 }
 
-async fn start_vm(name: &str) -> eyre::Result<()> {
-    tvm::ch::runtime::start_vm(name).await?;
+async fn start_vm(runtime_dir: &str, name: &str) -> eyre::Result<()> {
+    tvm::ch::runtime::start_vm(runtime_dir, name).await?;
     Ok(())
 }
 
-async fn stop_vm(name: &str) -> eyre::Result<()> {
-    tvm::ch::runtime::shutdown_vm(name).await?;
+async fn stop_vm(runtime_dir: &str, name: &str) -> eyre::Result<()> {
+    tvm::ch::runtime::shutdown_vm(runtime_dir, name).await?;
     Ok(())
 }
 
-async fn run_apiserver(listen: &str) -> eyre::Result<()> {
-    tvm::apiserver::run_server(listen).await?;
+async fn run_apiserver(runtime_dir: &str, listen: &str) -> eyre::Result<()> {
+    tvm::apiserver::run_server(listen, runtime_dir.into()).await?;
     Ok(())
 }
 
-async fn run_unitserver(reconcile_delay: u64) -> eyre::Result<()> {
+async fn run_unitserver(runtime_dir: &str, reconcile_delay: u64) -> eyre::Result<()> {
     let (shutdown_send, shutdown_recv) = mpsc::channel(1);
     let (terminated_send, mut terminated_recv) = mpsc::channel(1);
 
     let config = tvm::unitserver::Config {
         reconcile_delay: Duration::from_secs(reconcile_delay),
         shutdown_signal: shutdown_recv,
+        runtime_dir: runtime_dir.into(),
     };
 
     let worker = tvm::unitserver::main(config, terminated_send);
@@ -255,8 +258,11 @@ async fn run_unitserver(reconcile_delay: u64) -> eyre::Result<()> {
     terminated_recv.recv().await.unwrap()
 }
 
-async fn run_all(listen: &str, reconcile_delay: u64) -> eyre::Result<()> {
-    let res = tokio::join!(run_apiserver(listen), run_unitserver(reconcile_delay));
+async fn run_all(runtime_dir: &str, listen: &str, reconcile_delay: u64) -> eyre::Result<()> {
+    let res = tokio::join!(
+        run_apiserver(runtime_dir, listen),
+        run_unitserver(runtime_dir, reconcile_delay)
+    );
     if res.0.is_err() {
         res.0
     } else if res.1.is_err() {
@@ -274,15 +280,17 @@ pub async fn main() -> eyre::Result<()> {
         .init();
 
     match &cli.command {
-        Commands::Internal { command } => internal_command(command).await,
-        Commands::Systemd { command } => systemd_command(command).await,
-        Commands::Start { name } => start_vm(name).await,
-        Commands::Stop { name } => stop_vm(name).await,
-        Commands::ApiServer { listen } => run_apiserver(listen).await,
-        Commands::UnitServer { reconcile_delay } => run_unitserver(*reconcile_delay).await,
+        Commands::Internal { command } => internal_command(command, &cli.runtime_dir).await,
+        Commands::Systemd { command } => systemd_command(command, &cli.runtime_dir).await,
+        Commands::Start { name } => start_vm(name, &cli.runtime_dir).await,
+        Commands::Stop { name } => stop_vm(name, &cli.runtime_dir).await,
+        Commands::ApiServer { listen } => run_apiserver(&cli.runtime_dir, listen).await,
+        Commands::UnitServer { reconcile_delay } => {
+            run_unitserver(&cli.runtime_dir, *reconcile_delay).await
+        }
         Commands::Serve {
             listen,
             reconcile_delay,
-        } => run_all(listen, *reconcile_delay).await,
+        } => run_all(&cli.runtime_dir, listen, *reconcile_delay).await,
     }
 }

@@ -13,11 +13,10 @@ use crate::database::{entity::Entity, virtual_machine::VirtualMachine};
 
 use super::{error::Error, get_vm_tap_name};
 
-const DATA_DIR: &str = "/var/lib/tinyvmm";
 const HYPERVISOR_FW: &str = "hypervisor";
 
-pub async fn bootstrap_vm(name: &str) -> Result<(), Error> {
-    let vm = VirtualMachine::get(name)?;
+pub async fn bootstrap_vm(runtime_dir: &str, name: &str) -> Result<(), Error> {
+    let vm = VirtualMachine::get(runtime_dir, name)?;
 
     let params = VmConfig {
         cpus: CpusConfig {
@@ -30,7 +29,7 @@ pub async fn bootstrap_vm(name: &str) -> Result<(), Error> {
             ..Default::default()
         },
         payload: Some(PayloadConfig {
-            kernel: Some(PathBuf::from(DATA_DIR).join(HYPERVISOR_FW)),
+            kernel: Some(PathBuf::from(runtime_dir).join(HYPERVISOR_FW)),
             ..Default::default()
         }),
         disks: Some(vec![DiskConfig {

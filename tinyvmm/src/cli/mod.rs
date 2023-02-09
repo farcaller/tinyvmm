@@ -47,9 +47,17 @@ enum Commands {
         #[clap(long)]
         reconcile_delay: u64,
     },
+    DnsServer {
+        #[clap(long)]
+        listen: String,
+        #[clap(long)]
+        reconcile_delay: u64,
+    },
     Serve {
         #[clap(long)]
         listen: String,
+        #[clap(long)]
+        listen_dns: String,
         #[clap(long)]
         reconcile_delay: u64,
     },
@@ -258,15 +266,58 @@ async fn run_unitserver(runtime_dir: &str, reconcile_delay: u64) -> eyre::Result
     terminated_recv.recv().await.unwrap()
 }
 
-async fn run_all(runtime_dir: &str, listen: &str, reconcile_delay: u64) -> eyre::Result<()> {
+async fn run_dnsserver(runtime_dir: &str, reconcile_delay: u64, listen: &str) -> eyre::Result<()> {
+    let (shutdown_send, shutdown_recv) = mpsc::channel(1);
+
+    let worker = tvm::dns::run_server(
+        listen.parse()?,
+        runtime_dir.into(),
+        Duration::from_secs(reconcile_delay),
+        shutdown_recv,
+    );
+    let handle = tokio::spawn(worker);
+    let sig_int = signal::ctrl_c();
+    let mut sig_quit = signal::unix::signal(SignalKind::quit())?;
+    let mut sig_term = signal::unix::signal(SignalKind::terminate())?;
+
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sig_int => {
+                debug!("SIGINT received; starting forced shutdown");
+                shutdown_send.send(()).await?;
+            },
+            _ = sig_quit.recv() => {
+                debug!("SIGQUIT received; starting forced shutdown");
+                shutdown_send.send(()).await?;
+            },
+            _ = sig_term.recv() => {
+                debug!("SIGTERM received; starting graceful shutdown");
+                shutdown_send.send(()).await?;
+            },
+        };
+        Ok::<(), eyre::Report>(())
+    });
+
+    handle.await.unwrap()
+}
+
+async fn run_all(
+    runtime_dir: &str,
+    listen: &str,
+    listen_dns: &str,
+    reconcile_delay: u64,
+) -> eyre::Result<()> {
     let res = tokio::join!(
         run_apiserver(runtime_dir, listen),
-        run_unitserver(runtime_dir, reconcile_delay)
+        run_unitserver(runtime_dir, reconcile_delay),
+        run_dnsserver(runtime_dir, reconcile_delay, listen_dns),
     );
     if res.0.is_err() {
         res.0
     } else if res.1.is_err() {
         res.1
+    } else if (res.2).is_err() {
+        res.2
     } else {
         Ok(())
     }
@@ -285,12 +336,17 @@ pub async fn main() -> eyre::Result<()> {
         Commands::Start { name } => start_vm(name, &cli.runtime_dir).await,
         Commands::Stop { name } => stop_vm(name, &cli.runtime_dir).await,
         Commands::ApiServer { listen } => run_apiserver(&cli.runtime_dir, listen).await,
+        Commands::DnsServer {
+            reconcile_delay,
+            listen,
+        } => run_dnsserver(&cli.runtime_dir, *reconcile_delay, listen).await,
         Commands::UnitServer { reconcile_delay } => {
             run_unitserver(&cli.runtime_dir, *reconcile_delay).await
         }
         Commands::Serve {
             listen,
+            listen_dns,
             reconcile_delay,
-        } => run_all(&cli.runtime_dir, listen, *reconcile_delay).await,
+        } => run_all(&cli.runtime_dir, listen, listen_dns, *reconcile_delay).await,
     }
 }

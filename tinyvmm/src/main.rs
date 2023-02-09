@@ -3,6 +3,7 @@ mod ch;
 mod cli;
 mod database;
 mod dbus;
+mod dns;
 mod systemd;
 mod unitserver;
 

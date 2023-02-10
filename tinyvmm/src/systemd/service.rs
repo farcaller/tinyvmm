@@ -72,6 +72,9 @@ pub async fn has_diffs(
     let units = generate_vm_service(name, bridge_name, self_exe).await?;
     for (name, config) in units {
         let path = get_unit_path(&name);
+        if !path.exists() {
+            return Ok(true);
+        }
         let contents =
             fs::read_to_string(path).map_err(SystemdUnitCreationError::CannotReadUnitFile)?;
         if contents != config {

@@ -110,6 +110,7 @@ enum InternalCommands {
     },
     CreateVMService {
         name: String,
+        bridge_name: String,
     },
     Networkd {
         #[command(subcommand)]
@@ -164,8 +165,9 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
         } => {
             tvm::systemd::destroy_netdev(name).await?;
         }
-        CreateVMService { name } => {
-            tvm::systemd::create_vm_service(name, &std::env::args().next().unwrap()).await?;
+        CreateVMService { name, bridge_name } => {
+            tvm::systemd::create_vm_service(name, bridge_name, &std::env::args().next().unwrap())
+                .await?;
         }
         Networkd { command } => networkd_command(command).await?,
     }
@@ -181,7 +183,7 @@ async fn systemd_command(cmd: &SystemdCommands, runtime_dir: &str) -> eyre::Resu
             let vm = VirtualMachine::get(runtime_dir, name)?;
 
             tvm::systemd::tap::create_tap(&tap_name, &vm.spec.mac).await?;
-            tvm::systemd::tap::create_tap_network(&tap_name, "tvbr0", &vm.spec.mac).await?;
+            tvm::systemd::tap::create_tap_network(&tap_name, &vm.spec.bridge, &vm.spec.mac).await?;
         }
         BootstrapPost { name } => tvm::ch::bootstrap::bootstrap_vm(runtime_dir, name).await?,
         Teardown { name } => tvm::systemd::destroy_netdev(&tvm::ch::get_vm_tap_name(name)).await?,

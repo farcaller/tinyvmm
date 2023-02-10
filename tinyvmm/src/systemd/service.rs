@@ -40,8 +40,12 @@ async fn create_and_start_systemd_unit(
     Ok(())
 }
 
-pub async fn create_vm_service(name: &str, self_exe: &str) -> Result<(), SystemdUnitCreationError> {
-    let units = generate_vm_service(name, self_exe).await?;
+pub async fn create_vm_service(
+    name: &str,
+    bridge_name: &str,
+    self_exe: &str,
+) -> Result<(), SystemdUnitCreationError> {
+    let units = generate_vm_service(name, bridge_name, self_exe).await?;
     for (name, config) in units {
         create_and_start_systemd_unit(&name, &config).await?;
     }
@@ -60,8 +64,12 @@ pub async fn start_service(name: &str) -> Result<(), SystemdUnitCreationError> {
     Ok(())
 }
 
-pub async fn has_diffs(name: &str, self_exe: &str) -> Result<bool, SystemdUnitCreationError> {
-    let units = generate_vm_service(name, self_exe).await?;
+pub async fn has_diffs(
+    name: &str,
+    bridge_name: &str,
+    self_exe: &str,
+) -> Result<bool, SystemdUnitCreationError> {
+    let units = generate_vm_service(name, bridge_name, self_exe).await?;
     for (name, config) in units {
         let path = get_unit_path(&name);
         let contents =
@@ -76,6 +84,7 @@ pub async fn has_diffs(name: &str, self_exe: &str) -> Result<bool, SystemdUnitCr
 
 pub async fn generate_vm_service(
     name: &str,
+    bridge_name: &str,
     self_exe: &str,
 ) -> Result<HashMap<String, String>, SystemdUnitCreationError> {
     let mut res = HashMap::new();
@@ -102,7 +111,7 @@ pub async fn generate_vm_service(
         &json!({
             "name": name,
             "self_exe": format!("{}", std::fs::canonicalize(self_exe).unwrap().to_string_lossy()),
-            "netbr": "tvbr0",
+            "netbr": bridge_name,
             "netdev": get_systemd_tap_unit_name(name),
         }),
     )?;
@@ -125,7 +134,7 @@ pub async fn generate_vm_service(
         &json!({
             "name": name,
             "self_exe": format!("{}", std::fs::canonicalize(self_exe).unwrap().to_string_lossy()),
-            "netbr": "tvbr0",
+            "netbr": bridge_name,
             "vmservice": get_systemd_unit_name(name),
         }),
     )?;

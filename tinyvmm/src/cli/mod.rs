@@ -340,8 +340,8 @@ pub async fn main() -> eyre::Result<()> {
     match &cli.command {
         Commands::Internal { command } => internal_command(command, &cli.runtime_dir).await,
         Commands::Systemd { command } => systemd_command(command, &cli.runtime_dir).await,
-        Commands::Start { name } => start_vm(name, &cli.runtime_dir).await,
-        Commands::Stop { name } => stop_vm(name, &cli.runtime_dir).await,
+        Commands::Start { name } => start_vm(&cli.runtime_dir, name).await,
+        Commands::Stop { name } => stop_vm(&cli.runtime_dir, name).await,
         Commands::ApiServer { listen } => run_apiserver(&cli.runtime_dir, listen).await,
         Commands::DnsServer {
             reconcile_delay,

@@ -86,14 +86,24 @@
             services.tinyvmm = {
               enable = mkOption {
                 default = false;
-                type = with types; bool;
+                type = with types; uniq bool;
+              };
+              dnsAddress = mkOption {
+                default = "127.0.0.2:53";
+                type = with types; uniq string;
               };
             };
           };
           config = mkIf cfg.enable {
             systemd.services.tinyvmm = {
               wantedBy = [ "multi-user.target" ];
-              script = "${self.packages.${pkgs.system}.default}/bin/tinyvmm serve --reconcile-delay 10 --listen \${RUNTIME_DIRECTORY}/sock -vvvv";
+              script = ''
+                ${self.packages.${pkgs.system}.default}/bin/tinyvmm serve \
+                --reconcile-delay 10 \
+                --listen ''${RUNTIME_DIRECTORY}/sock \
+                --listen-dns "${cfg.dnsAddress}" \
+                -vvv
+              '';
               serviceConfig = {
                 RuntimeDirectory = [ "tinyvmm" ];
                 StateDirectory = [ "tinyvmm" ]; # TODO: expose via a flag

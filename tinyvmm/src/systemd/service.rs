@@ -43,9 +43,10 @@ async fn create_and_start_systemd_unit(
 pub async fn create_vm_service(
     name: &str,
     bridge_name: &str,
+    runtime_dir: &str,
     self_exe: &str,
 ) -> Result<(), SystemdUnitCreationError> {
-    let units = generate_vm_service(name, bridge_name, self_exe).await?;
+    let units = generate_vm_service(name, bridge_name, runtime_dir, self_exe).await?;
     for (name, config) in units {
         create_and_start_systemd_unit(&name, &config).await?;
     }
@@ -67,9 +68,10 @@ pub async fn start_service(name: &str) -> Result<(), SystemdUnitCreationError> {
 pub async fn has_diffs(
     name: &str,
     bridge_name: &str,
+    runtime_dir: &str,
     self_exe: &str,
 ) -> Result<bool, SystemdUnitCreationError> {
-    let units = generate_vm_service(name, bridge_name, self_exe).await?;
+    let units = generate_vm_service(name, bridge_name, runtime_dir, self_exe).await?;
     for (name, config) in units {
         let path = get_unit_path(&name);
         if !path.exists() {
@@ -88,6 +90,7 @@ pub async fn has_diffs(
 pub async fn generate_vm_service(
     name: &str,
     bridge_name: &str,
+    runtime_dir: &str,
     self_exe: &str,
 ) -> Result<HashMap<String, String>, SystemdUnitCreationError> {
     let mut res = HashMap::new();
@@ -104,10 +107,10 @@ pub async fn generate_vm_service(
             Type=simple
             ExecStart=/run/wrappers/bin/cloud-hypervisor --api-socket=${RUNTIME_DIRECTORY}/api.sock -v
 
-            ExecStartPost={{self_exe}} systemd bootstrap-post {{name}}
-            ExecStartPost={{self_exe}} start {{name}}
+            ExecStartPost={{self_exe}} --runtime-dir {{runtime_dir}} systemd bootstrap-post {{name}}
+            ExecStartPost={{self_exe}} --runtime-dir {{runtime_dir}} start {{name}}
 
-            ExecStop={{self_exe}} stop {{name}}
+            ExecStop={{self_exe}} --runtime-dir {{runtime_dir}} stop {{name}}
 
             RuntimeDirectory=tinyvmi-{{name}}
             "#},
@@ -116,6 +119,7 @@ pub async fn generate_vm_service(
             "self_exe": format!("{}", std::fs::canonicalize(self_exe).unwrap().to_string_lossy()),
             "netbr": bridge_name,
             "netdev": get_systemd_tap_unit_name(name),
+            "runtime_dir": runtime_dir,
         }),
     )?;
 

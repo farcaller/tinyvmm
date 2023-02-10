@@ -16,12 +16,14 @@ pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
         let name = &vm.metadata.name;
         let bridge_name = &vm.spec.bridge;
 
-        let has_diffs = systemd::has_diffs(name, bridge_name, self_exe).await;
+        let has_diffs = systemd::has_diffs(name, bridge_name, runtime_dir, self_exe).await;
         match has_diffs {
             Err(e) => {
                 info!("failed to check for diffs for {}: {}", name, e);
                 info!("will try to reconcile");
-                if let Err(e) = systemd::create_vm_service(name, bridge_name, self_exe).await {
+                if let Err(e) =
+                    systemd::create_vm_service(name, bridge_name, runtime_dir, self_exe).await
+                {
                     warn!("systemd::create_vm_service failed for {}: {}", name, e);
                 }
                 if let Err(e) = systemd::start_service(name).await {
@@ -31,7 +33,9 @@ pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
             }
             Ok(true) => {
                 info!("{} changed, will try to reconcile", name);
-                if let Err(e) = systemd::create_vm_service(name, bridge_name, self_exe).await {
+                if let Err(e) =
+                    systemd::create_vm_service(name, bridge_name, runtime_dir, self_exe).await
+                {
                     warn!("systemd::create_vm_service failed for {}: {}", name, e);
                 }
                 if let Err(e) = systemd::start_service(name).await {

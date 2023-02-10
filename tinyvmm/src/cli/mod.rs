@@ -166,8 +166,13 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
             tvm::systemd::destroy_netdev(name).await?;
         }
         CreateVMService { name, bridge_name } => {
-            tvm::systemd::create_vm_service(name, bridge_name, &std::env::args().next().unwrap())
-                .await?;
+            tvm::systemd::create_vm_service(
+                name,
+                bridge_name,
+                runtime_dir,
+                &std::env::args().next().unwrap(),
+            )
+            .await?;
         }
         Networkd { command } => networkd_command(command).await?,
     }

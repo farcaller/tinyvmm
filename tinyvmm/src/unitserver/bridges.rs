@@ -3,7 +3,7 @@ use crate::{
     systemd::bridge::{create_bridge, create_bridge_network, Lease},
 };
 
-pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
+pub async fn reconcile(runtime_dir: &str, dns_listener: &str) -> eyre::Result<()> {
     let bridges = Bridge::list(runtime_dir)?;
     let vms = VirtualMachine::list(runtime_dir)?;
 
@@ -21,6 +21,7 @@ pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
             name,
             &bridge.spec.dns_zone,
             &bridge.spec.address.parse().unwrap(),
+            dns_listener,
             vms.map(|vm| Lease {
                 mac: vm.spec.mac.clone(),
                 ip: vm.spec.ip.clone(),

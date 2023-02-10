@@ -46,6 +46,8 @@ enum Commands {
     UnitServer {
         #[clap(long)]
         reconcile_delay: u64,
+        #[clap(long)]
+        dns_listener: String,
     },
     DnsServer {
         #[clap(long)]
@@ -78,6 +80,8 @@ enum BridgeCommands {
         address: ipnet::Ipv4Net,
         #[clap(long)]
         dns_zone: String,
+        #[clap(long)]
+        dns_listener: String,
     },
     Destroy {
         name: String,
@@ -135,6 +139,7 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
                     name,
                     address,
                     dns_zone,
+                    dns_listener,
                 },
         } => {
             let vms = VirtualMachine::list(runtime_dir)?;
@@ -146,7 +151,14 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
                 });
             }
             tvm::systemd::bridge::create_bridge(name).await?;
-            tvm::systemd::bridge::create_bridge_network(name, dns_zone, address, leases).await?;
+            tvm::systemd::bridge::create_bridge_network(
+                name,
+                dns_zone,
+                address,
+                dns_listener,
+                leases,
+            )
+            .await?;
         }
         Bridge {
             command: br::Destroy { name },
@@ -236,7 +248,11 @@ async fn run_apiserver(runtime_dir: &str, listen: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn run_unitserver(runtime_dir: &str, reconcile_delay: u64) -> eyre::Result<()> {
+async fn run_unitserver(
+    runtime_dir: &str,
+    reconcile_delay: u64,
+    dns_listener: &str,
+) -> eyre::Result<()> {
     let (shutdown_send, shutdown_recv) = mpsc::channel(1);
     let (terminated_send, mut terminated_recv) = mpsc::channel(1);
 
@@ -244,6 +260,7 @@ async fn run_unitserver(runtime_dir: &str, reconcile_delay: u64) -> eyre::Result
         reconcile_delay: Duration::from_secs(reconcile_delay),
         shutdown_signal: shutdown_recv,
         runtime_dir: runtime_dir.into(),
+        dns_listener: dns_listener.into(),
     };
 
     let worker = tvm::unitserver::main(config, terminated_send);
@@ -314,9 +331,10 @@ async fn run_all(
     listen_dns: &str,
     reconcile_delay: u64,
 ) -> eyre::Result<()> {
+    let dns_listener = listen_dns.split(":").next().unwrap();
     let res = tokio::join!(
         run_apiserver(runtime_dir, listen),
-        run_unitserver(runtime_dir, reconcile_delay),
+        run_unitserver(runtime_dir, reconcile_delay, dns_listener),
         run_dnsserver(runtime_dir, reconcile_delay, listen_dns),
     );
     if res.0.is_err() {
@@ -347,9 +365,10 @@ pub async fn main() -> eyre::Result<()> {
             reconcile_delay,
             listen,
         } => run_dnsserver(&cli.runtime_dir, *reconcile_delay, listen).await,
-        Commands::UnitServer { reconcile_delay } => {
-            run_unitserver(&cli.runtime_dir, *reconcile_delay).await
-        }
+        Commands::UnitServer {
+            reconcile_delay,
+            dns_listener,
+        } => run_unitserver(&cli.runtime_dir, *reconcile_delay, dns_listener).await,
         Commands::Serve {
             listen,
             listen_dns,

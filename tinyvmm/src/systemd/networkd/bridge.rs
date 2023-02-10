@@ -32,6 +32,7 @@ pub async fn create_bridge_network(
     name: &str,
     domain: &str,
     address: &ipnet::Ipv4Net,
+    dns_listener: &str,
     leases: Vec<Lease>,
 ) -> Result<(), SystemdUnitCreationError> {
     let ini = Handlebars::new().render_template(
@@ -62,7 +63,7 @@ pub async fn create_bridge_network(
         &json!({
             "name": name,
             "address": format!("{}", address),
-            "dns": address.addr(),
+            "dns": dns_listener,
             "router": address.addr(),
             "domains": format!("~{}", domain),
             "leases": leases,

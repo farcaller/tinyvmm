@@ -25,7 +25,8 @@ pub async fn bootstrap_vm(runtime_dir: &str, name: &str) -> Result<(), Error> {
             ..Default::default()
         },
         memory: MemoryConfig {
-            size: Byte::from_str(vm.spec.memory)?.get_bytes() as u64,
+            // TODO: fix the memory parsing in the deserializer so that the number is always correct in here
+            size: Byte::from_str(format!("{}iB", vm.spec.memory))?.get_bytes() as u64,
             ..Default::default()
         },
         payload: Some(PayloadConfig {

@@ -50,7 +50,7 @@ pub async fn create_bridge_network(
 
             [DHCPServer]
             EmitDNS=yes
-            DNS=100.100.100.100
+            DNS={{dns}}
             EmitRouter=yes
             Router={{router}}
 

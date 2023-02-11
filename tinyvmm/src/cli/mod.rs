@@ -358,6 +358,7 @@ pub async fn main() -> eyre::Result<()> {
     env_logger::Builder::new()
         .filter_level(cli.verbose.log_level_filter())
         .filter_module("handlebars::render", LevelFilter::Info)
+        .filter_module("trust_dns_server", LevelFilter::Info)
         .init();
 
     match &cli.command {

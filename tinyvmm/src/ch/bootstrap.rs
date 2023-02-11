@@ -1,5 +1,6 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
+use backoff::ExponentialBackoffBuilder;
 use byte_unit::Byte;
 use hyper::{Body, Client, Method, Request};
 use hyperlocal::{UnixClientExt, Uri};
@@ -76,22 +77,34 @@ pub async fn bootstrap_vm(runtime_dir: &str, name: &str) -> Result<(), Error> {
         tpm: None,
     };
 
-    let url = Uri::new(
-        PathBuf::from("/run")
-            .join(format!("tinyvmi-{}", name))
-            .join("api.sock"),
-        "/api/v1/vm.create",
-    );
-    let client = Client::unix();
+    let request_op = || async {
+        let url = Uri::new(
+            PathBuf::from("/run")
+                .join(format!("tinyvmi-{}", name))
+                .join("api.sock"),
+            "/api/v1/vm.create",
+        );
 
-    let req = Request::builder()
-        .method(Method::PUT)
-        .uri(url)
-        .header("host", "localhost")
-        .header("accept", "*/*")
-        .body(Body::from(serde_json::to_string(&params)?))?;
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(url)
+            .header("host", "localhost")
+            .header("accept", "*/*")
+            .body(Body::from(
+                serde_json::to_string(&params).map_err(Error::Serialize)?,
+            ))
+            .map_err(Error::Http)?;
 
-    let response = client.request(req).await?;
+        let client = Client::unix();
+
+        Ok(client.request(req).await.map_err(Error::Hyper)?)
+    };
+
+    let backoff = ExponentialBackoffBuilder::new()
+        .with_max_elapsed_time(Some(Duration::from_secs(60)))
+        .build();
+    let response = backoff::future::retry(backoff, request_op).await?;
+
     let (parts, body) = response.into_parts();
 
     if !parts.status.is_success() {

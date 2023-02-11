@@ -50,6 +50,7 @@ derivative = "2.2.0"
 trust-dns-server = "0.22.0"
 async-trait = "0.1.64"
 trust-dns-proto = "0.22.0"
+backoff = { version = "0.4.0", features = ["tokio"] }
 
 [build-dependencies]
 clap = { version = "^4.0", features = ["derive"] }

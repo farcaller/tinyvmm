@@ -25,7 +25,7 @@ pub async fn create_tap_network(
         &json!({
             "name": name,
             "bridge": bridge,
-            "mac": mac,
+            "mac": vm_mac_to_tap_mac(mac),
         }),
     )?;
 
@@ -42,9 +42,15 @@ pub async fn create_tap(name: &str, mac: &str) -> Result<(), SystemdUnitCreation
             "},
         &json!({
             "name": name,
-            "mac": mac,
+            "mac": vm_mac_to_tap_mac(mac),
         }),
     )?;
 
     return create_and_start_unit(name, "netdev", &ini).await;
+}
+
+fn vm_mac_to_tap_mac(vm_mac: &str) -> String {
+    // TODO: this needs a better solution to avoid confusion
+    let stable_part = &vm_mac[3..];
+    format!("76:{stable_part}")
 }

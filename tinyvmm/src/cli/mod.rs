@@ -82,6 +82,8 @@ enum BridgeCommands {
         dns_zone: String,
         #[clap(long)]
         dns_listener: String,
+        #[clap(long)]
+        dns_server: String,
     },
     Destroy {
         name: String,
@@ -140,6 +142,7 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
                     address,
                     dns_zone,
                     dns_listener,
+                    dns_server,
                 },
         } => {
             let vms = VirtualMachine::list(runtime_dir)?;
@@ -156,6 +159,7 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
                 dns_zone,
                 address,
                 dns_listener,
+                dns_server,
                 leases,
             )
             .await?;
@@ -331,7 +335,7 @@ async fn run_all(
     listen_dns: &str,
     reconcile_delay: u64,
 ) -> eyre::Result<()> {
-    let dns_listener = listen_dns.split(":").next().unwrap();
+    let dns_listener = listen_dns.split(':').next().unwrap();
     let res = tokio::join!(
         run_apiserver(runtime_dir, listen),
         run_unitserver(runtime_dir, reconcile_delay, dns_listener),

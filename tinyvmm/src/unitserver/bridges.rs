@@ -22,6 +22,7 @@ pub async fn reconcile(runtime_dir: &str, dns_listener: &str) -> eyre::Result<()
             &bridge.spec.dns_zone,
             &bridge.spec.address.parse().unwrap(),
             dns_listener,
+            &bridge.spec.dns_server,
             vms.map(|vm| Lease {
                 mac: vm.spec.mac.clone(),
                 ip: vm.spec.ip.clone(),

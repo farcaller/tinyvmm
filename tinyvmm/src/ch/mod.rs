@@ -11,15 +11,15 @@ pub fn get_vm_tap_name(name: &str) -> String {
     let digest = context.finish();
     let hash = HEXLOWER.encode(digest.as_ref());
 
-    // 0123456789012345
+    // 012345678901234
     // vmi
-    //    VMNAMEVM
-    //            DIGES
+    //    VMNAMEV
+    //           DIGES
 
     format!(
         "{}{}{}",
         PREFIX,
-        &name[..std::cmp::min(name.len(), 8)],
+        &name[..std::cmp::min(name.len(), 7)],
         &hash[..5]
     )
 }

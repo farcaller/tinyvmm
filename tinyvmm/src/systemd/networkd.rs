@@ -26,7 +26,7 @@ pub(crate) async fn create_and_start_unit(
     let connection = Connection::system().await?;
     let proxy = NetworkdProxy::new(&connection).await?;
 
-    proxy.reload().await?;
+    // proxy.reload().await?;
 
     Ok(())
 }
@@ -51,7 +51,7 @@ pub async fn destroy_netdev(name: &str) -> Result<(), SystemdUnitCreationError> 
     let connection = Connection::system().await?;
     let proxy = NetworkdProxy::new(&connection).await?;
 
-    proxy.reload().await?;
+    // proxy.reload().await?;
 
     let (connection, handle, _) = rtnetlink::new_connection().map_err(NetlinkConnection)?;
     // TODO: does this leak?

@@ -5,7 +5,7 @@ use syn::{
     parse_macro_input, parse_quote,
     punctuated::Punctuated,
     spanned::Spanned,
-    Attribute, Error, ItemStruct, LitStr, Token,
+    Attribute, Error, Ident, ItemStruct, LitStr, Token,
 };
 
 #[derive(Debug)]
@@ -17,8 +17,11 @@ impl Parse for Args {
     fn parse(input: ParseStream) -> parse::Result<Self> {
         let vars = Punctuated::<syn::LitStr, Token![,]>::parse_terminated(input)?;
 
-        if vars.len() != 1 {
-            return Err(Error::new(vars.span(), "expected 1 argument: version"));
+        if vars.len() != 2 {
+            return Err(Error::new(
+                vars.span(),
+                "expected 2 arguments: version, migrator",
+            ));
         }
 
         Ok(Args {
@@ -40,6 +43,9 @@ pub fn vmm_entity(args: TokenStream, item: TokenStream) -> TokenStream {
         version.span(),
     );
     let version_regex = LitStr::new(format!("^{}$", version.value()).as_ref(), version.span());
+
+    let migrator = &args.vars[1];
+    let migrator_ident = Ident::new(&migrator.value(), migrator.span());
 
     let kind = struct_ident.to_string();
     let kind_str = LitStr::new(format!("\"{}\".into()", kind).as_ref(), kind.span());
@@ -85,6 +91,11 @@ pub fn vmm_entity(args: TokenStream, item: TokenStream) -> TokenStream {
             const API_VERSION: &'static str = #version;
             const KIND: &'static str = #kind;
             type Type = #struct_ident;
+
+            fn migrator(version: &str) -> Option<fn(serde_json::value::Value)
+                -> Result<serde_json::value::Value, crate::database::error::Error>> {
+                #migrator_ident (version)
+            }
         }
     };
 

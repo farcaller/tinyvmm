@@ -11,6 +11,7 @@ pub mod bridge;
 pub mod entity;
 pub mod error;
 pub mod metadata;
+pub mod serde;
 pub mod virtual_machine;
 
 const DB_PATH: &str = "db.sqlite";

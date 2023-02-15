@@ -34,10 +34,16 @@ pub async fn bootstrap_vm(runtime_dir: &str, name: &str) -> Result<(), Error> {
             kernel: Some(PathBuf::from(runtime_dir).join(HYPERVISOR_FW)),
             ..Default::default()
         }),
-        disks: Some(vec![DiskConfig {
-            path: Some(PathBuf::from(vm.spec.disk)),
-            ..Default::default()
-        }]),
+        disks: Some(
+            vm.spec
+                .disks
+                .iter()
+                .map(|d| DiskConfig {
+                    path: Some(PathBuf::from(d)),
+                    ..Default::default()
+                })
+                .collect(),
+        ),
         net: Some(vec![NetConfig {
             tap: Some(get_vm_tap_name(name)),
             mac: MacAddr::parse_str(&vm.spec.mac)?,

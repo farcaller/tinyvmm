@@ -1,10 +1,21 @@
+use serde_json::value::Value;
 use vmm_entity::{vmm_entity, vmm_entity_struct};
 
-#[vmm_entity("v1alpha1")]
+use super::{entity::MigratableEntity, error::Error};
+
+pub fn get_migrator(version: &str) -> Option<fn(Value) -> Result<Value, Error>> {
+    match version {
+        "v1alpha1" => Some(Bridge::migrate),
+        _ => None,
+    }
+}
+
+#[vmm_entity("v1alpha1", "get_migrator")]
 pub struct Bridge {
     #[validate]
     pub spec: BridgeSpec,
 }
+impl MigratableEntity for Bridge {}
 
 #[vmm_entity_struct]
 pub struct BridgeSpec {

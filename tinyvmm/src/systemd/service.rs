@@ -107,10 +107,10 @@ pub async fn generate_vm_service(
             Type=simple
             ExecStart=/run/wrappers/bin/cloud-hypervisor --api-socket=${RUNTIME_DIRECTORY}/api.sock
 
-            ExecStartPost={{self_exe}} --store {{store} systemd bootstrap-post {{name}}
-            ExecStartPost={{self_exe}} --store {{store} start {{name}}
+            ExecStartPost={{self_exe}} --store {{store}} systemd bootstrap-post {{name}}
+            ExecStartPost={{self_exe}} --store {{store}} start {{name}}
 
-            ExecStop={{self_exe}} --store {{store} stop {{name}}
+            ExecStop={{self_exe}} --store {{store}} stop {{name}}
 
             RuntimeDirectory=tinyvmi-{{name}}
             "#},

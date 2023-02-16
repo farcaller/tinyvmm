@@ -45,23 +45,17 @@ enum Commands {
     },
     UnitServer {
         #[clap(long)]
-        reconcile_delay: u64,
-        #[clap(long)]
         dns_listener: String,
     },
     DnsServer {
         #[clap(long)]
         listen: String,
-        #[clap(long)]
-        reconcile_delay: u64,
     },
     Serve {
         #[clap(long)]
         listen: String,
         #[clap(long)]
         listen_dns: String,
-        #[clap(long)]
-        reconcile_delay: u64,
     },
 }
 
@@ -254,16 +248,11 @@ async fn run_apiserver(store: Store, listen: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn run_unitserver(
-    store: Store,
-    reconcile_delay: u64,
-    dns_listener: &str,
-) -> eyre::Result<()> {
+async fn run_unitserver(store: Store, dns_listener: &str) -> eyre::Result<()> {
     let (shutdown_send, shutdown_recv) = mpsc::channel(1);
     let (terminated_send, mut terminated_recv) = mpsc::channel(1);
 
     let config = tvm::unitserver::Config {
-        reconcile_delay: Duration::from_secs(reconcile_delay),
         shutdown_signal: shutdown_recv,
         store,
         dns_listener: dns_listener.into(),
@@ -296,15 +285,10 @@ async fn run_unitserver(
     terminated_recv.recv().await.unwrap()
 }
 
-async fn run_dnsserver(store: Store, reconcile_delay: u64, listen: &str) -> eyre::Result<()> {
+async fn run_dnsserver(store: Store, listen: &str) -> eyre::Result<()> {
     let (shutdown_send, shutdown_recv) = mpsc::channel(1);
 
-    let worker = tvm::dns::run_server(
-        listen.parse()?,
-        store,
-        Duration::from_secs(reconcile_delay),
-        shutdown_recv,
-    );
+    let worker = tvm::dns::run_server(listen.parse()?, store, shutdown_recv);
     let handle = tokio::spawn(worker);
     let sig_int = signal::ctrl_c();
     let mut sig_quit = signal::unix::signal(SignalKind::quit())?;
@@ -331,17 +315,12 @@ async fn run_dnsserver(store: Store, reconcile_delay: u64, listen: &str) -> eyre
     handle.await.unwrap()
 }
 
-async fn run_all(
-    store: Store,
-    listen: &str,
-    listen_dns: &str,
-    reconcile_delay: u64,
-) -> eyre::Result<()> {
+async fn run_all(store: Store, listen: &str, listen_dns: &str) -> eyre::Result<()> {
     let dns_listener = listen_dns.split(':').next().unwrap();
     let res = tokio::join!(
         run_apiserver(store.clone(), listen),
-        run_unitserver(store.clone(), reconcile_delay, dns_listener),
-        run_dnsserver(store, reconcile_delay, listen_dns),
+        run_unitserver(store.clone(), dns_listener),
+        run_dnsserver(store, listen_dns),
     );
     if res.0.is_err() {
         res.0
@@ -360,6 +339,7 @@ pub async fn main() -> eyre::Result<()> {
     env_logger::Builder::new()
         .filter_level(cli.verbose.log_level_filter())
         .filter_module("handlebars::render", LevelFilter::Info)
+        .filter_module("sled", LevelFilter::Info)
         .filter_module("trust_dns_server", LevelFilter::Info)
         .init();
 
@@ -371,18 +351,8 @@ pub async fn main() -> eyre::Result<()> {
         Commands::Start { name } => start_vm(store, name).await,
         Commands::Stop { name } => stop_vm(store, name).await,
         Commands::ApiServer { listen } => run_apiserver(store, listen).await,
-        Commands::DnsServer {
-            reconcile_delay,
-            listen,
-        } => run_dnsserver(store, *reconcile_delay, listen).await,
-        Commands::UnitServer {
-            reconcile_delay,
-            dns_listener,
-        } => run_unitserver(store, *reconcile_delay, dns_listener).await,
-        Commands::Serve {
-            listen,
-            listen_dns,
-            reconcile_delay,
-        } => run_all(store, listen, listen_dns, *reconcile_delay).await,
+        Commands::DnsServer { listen } => run_dnsserver(store, listen).await,
+        Commands::UnitServer { dns_listener } => run_unitserver(store, dns_listener).await,
+        Commands::Serve { listen, listen_dns } => run_all(store, listen, listen_dns).await,
     }
 }

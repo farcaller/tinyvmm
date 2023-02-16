@@ -1,19 +1,12 @@
 mod bridges;
 mod virtualmachines;
 
-use std::time::Duration;
-
 use log::{debug, info, warn};
-use tokio::{
-    select,
-    sync::mpsc::{Receiver, Sender},
-    time,
-};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::database::store::Store;
 
 pub struct Config {
-    pub reconcile_delay: Duration,
     pub shutdown_signal: Receiver<()>,
     pub store: Store,
     pub dns_listener: String,
@@ -35,15 +28,24 @@ async fn reconcile(store: &Store, dns_listener: &str) {
 pub async fn main(mut config: Config, shutdown: Sender<eyre::Result<()>>) -> eyre::Result<()> {
     info!("starting the unit reconciler");
 
-    loop {
+    let mut subscriber = config.store.watch_entities("/");
+
+    tokio::spawn(async move {
         reconcile(&config.store, &config.dns_listener).await;
-        select! {
-            _ = time::sleep(config.reconcile_delay) => {}
-            _ = config.shutdown_signal.recv() => {
-                debug!("shutting down the unit reconciler");
-                shutdown.send(Ok(())).await.unwrap();
-                return Ok(());
-            }
+        while let Some(event) = (&mut subscriber).await {
+            debug!(
+                "unit reconciler event: {}",
+                String::from_utf8(event.key().to_ascii_lowercase())
+                    .or_else(|_| Ok::<String, ()>("?".into()))
+                    .unwrap()
+            );
+            reconcile(&config.store, &config.dns_listener).await;
         }
-    }
+    });
+
+    config.shutdown_signal.recv().await;
+    debug!("shutting down the unit reconciler");
+    shutdown.send(Ok(())).await.unwrap();
+
+    Ok(())
 }

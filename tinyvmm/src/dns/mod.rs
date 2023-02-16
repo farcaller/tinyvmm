@@ -7,7 +7,6 @@ use std::{
     net::{self, SocketAddr},
     str::FromStr,
     sync::Arc,
-    time::Duration,
 };
 use tokio::{
     net::UdpSocket,
@@ -34,7 +33,6 @@ struct DnsHandler {
     authority: Arc<Mutex<HashMap<String, Arc<InMemoryAuthority>>>>,
     catalog: Arc<Mutex<Catalog>>,
     store: Store,
-    reconcile_delay: Duration,
 }
 
 #[async_trait::async_trait]
@@ -50,14 +48,13 @@ impl RequestHandler for DnsHandler {
 }
 
 impl DnsHandler {
-    pub fn new(store: Store, reconcile_delay: Duration) -> Result<Self, Error> {
+    pub fn new(store: Store) -> Result<Self, Error> {
         let catalog = Catalog::new();
 
         Ok(DnsHandler {
             authority: Arc::new(Mutex::new(HashMap::new())),
             catalog: Arc::new(Mutex::new(catalog)),
             store,
-            reconcile_delay,
         })
     }
 
@@ -65,17 +62,26 @@ impl DnsHandler {
         let authority = self.authority.clone();
         let catalog = self.catalog.clone();
         let store = self.store.clone();
-        let reconcile_delay = self.reconcile_delay.clone();
 
         Ok(tokio::spawn(async move {
-            loop {
+            let mut subscriber = store.watch_entities("/");
+            {
                 let mut authority_map = authority.lock().await;
-                let subscriber = store.watch_entities("/");
+                let err = DnsHandler::reconcile(&store, &mut authority_map, catalog.clone()).await;
+            }
+
+            while let Some(event) = (&mut subscriber).await {
+                debug!(
+                    "dns reconciler event: {}",
+                    String::from_utf8(event.key().to_ascii_lowercase())
+                        .or_else(|_| Ok::<String, ()>("?".into()))
+                        .unwrap()
+                );
+                let mut authority_map = authority.lock().await;
                 let err = DnsHandler::reconcile(&store, &mut authority_map, catalog.clone()).await;
                 if let Err(err) = err {
                     error!("failed to reconcile the dns: {}", err);
                 }
-                tokio::time::sleep(reconcile_delay).await;
             }
         }))
     }
@@ -132,12 +138,11 @@ impl DnsHandler {
 pub async fn run_server(
     addr: SocketAddr,
     store: Store,
-    reconcile_delay: Duration,
     mut shutdown_signal: Receiver<()>,
 ) -> eyre::Result<()> {
     info!("starting the dns server");
 
-    let handler = DnsHandler::new(store, reconcile_delay)?;
+    let handler = DnsHandler::new(store)?;
 
     let _h = handler.run().await;
 

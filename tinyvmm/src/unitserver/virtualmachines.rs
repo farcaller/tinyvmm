@@ -5,7 +5,7 @@ use crate::{
     systemd,
 };
 
-pub async fn reconcile(store: &Store) -> eyre::Result<()> {
+pub async fn reconcile(store: &Store, api_server: &str) -> eyre::Result<()> {
     let self_exe = &std::env::args().next().unwrap();
 
     let vms = VirtualMachine::list(store)?;
@@ -20,13 +20,14 @@ pub async fn reconcile(store: &Store) -> eyre::Result<()> {
 
         debug!("reconciling vm {name}");
 
-        let has_diffs = systemd::has_diffs(name, bridge_name, store, self_exe).await;
+        let has_diffs = systemd::has_diffs(name, bridge_name, self_exe, api_server).await;
         debug!("vm {name} diffs: {has_diffs:?}");
         match has_diffs {
             Err(e) => {
                 info!("failed to check for diffs for {}: {}", name, e);
                 info!("will try to reconcile");
-                if let Err(e) = systemd::create_vm_service(name, bridge_name, store, self_exe).await
+                if let Err(e) =
+                    systemd::create_vm_service(name, bridge_name, self_exe, api_server).await
                 {
                     warn!("systemd::create_vm_service failed for {}: {}", name, e);
                 }
@@ -37,7 +38,8 @@ pub async fn reconcile(store: &Store) -> eyre::Result<()> {
             }
             Ok(true) => {
                 info!("{} changed, will try to reconcile", name);
-                if let Err(e) = systemd::create_vm_service(name, bridge_name, store, self_exe).await
+                if let Err(e) =
+                    systemd::create_vm_service(name, bridge_name, self_exe, api_server).await
                 {
                     warn!("systemd::create_vm_service failed for {}: {}", name, e);
                 }

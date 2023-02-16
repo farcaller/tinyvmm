@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     self as tvm,
     database::{entity::Entity, store::Store, virtual_machine::VirtualMachine},
@@ -16,6 +14,7 @@ use tokio::{
 struct Cli {
     #[clap(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
+
     #[clap(long, default_value = "/var/lib/tinyvmm/store.db")]
     store: String,
 
@@ -30,6 +29,9 @@ enum Commands {
         command: InternalCommands,
     },
     Systemd {
+        #[clap(long)]
+        api_server: String,
+
         #[command(subcommand)]
         command: SystemdCommands,
     },
@@ -46,6 +48,9 @@ enum Commands {
     UnitServer {
         #[clap(long)]
         dns_listener: String,
+
+        #[clap(long)]
+        api_server: String,
     },
     DnsServer {
         #[clap(long)]
@@ -54,6 +59,7 @@ enum Commands {
     Serve {
         #[clap(long)]
         listen: String,
+
         #[clap(long)]
         listen_dns: String,
     },
@@ -107,10 +113,6 @@ enum InternalCommands {
     Tap {
         #[command(subcommand)]
         command: TapCommands,
-    },
-    CreateVMService {
-        name: String,
-        bridge_name: String,
     },
     Networkd {
         #[command(subcommand)]
@@ -176,33 +178,30 @@ async fn internal_command(cmd: &InternalCommands, store: Store) -> eyre::Result<
         } => {
             tvm::systemd::destroy_netdev(name).await?;
         }
-        CreateVMService { name, bridge_name } => {
-            tvm::systemd::create_vm_service(
-                name,
-                bridge_name,
-                &store,
-                &std::env::args().next().unwrap(),
-            )
-            .await?;
-        }
         Networkd { command } => networkd_command(command).await?,
     }
     Ok(())
 }
 
-async fn systemd_command(cmd: &SystemdCommands, store: Store) -> eyre::Result<()> {
+async fn systemd_command(cmd: &SystemdCommands, api_server: &str) -> eyre::Result<()> {
     use SystemdCommands::*;
+
+    let client = crate::client::Client::new(api_server.into());
 
     match cmd {
         BootstrapPre { name } => {
             let tap_name = tvm::ch::get_vm_tap_name(name);
 
-            let vm = VirtualMachine::get(&store, name)?;
+            let vm = client.virtualmachines().get(name).await?;
 
             tvm::systemd::tap::create_tap(&tap_name, &vm.spec.mac).await?;
             tvm::systemd::tap::create_tap_network(&tap_name, &vm.spec.bridge, &vm.spec.mac).await?;
         }
-        BootstrapPost { name } => tvm::ch::bootstrap::bootstrap_vm(&store, name).await?,
+        BootstrapPost { name } => {
+            let vm = client.virtualmachines().get(name).await?;
+
+            tvm::ch::bootstrap::bootstrap_vm(&vm, name).await?
+        }
         Teardown { name } => tvm::systemd::destroy_netdev(&tvm::ch::get_vm_tap_name(name)).await?,
     }
     Ok(())
@@ -233,13 +232,13 @@ async fn networkd_command(cmd: &NetworkdCommand) -> eyre::Result<()> {
     }
 }
 
-async fn start_vm(store: Store, name: &str) -> eyre::Result<()> {
-    tvm::ch::runtime::start_vm(&store, name).await?;
+async fn start_vm(name: &str) -> eyre::Result<()> {
+    tvm::ch::runtime::start_vm(name).await?;
     Ok(())
 }
 
-async fn stop_vm(store: Store, name: &str) -> eyre::Result<()> {
-    tvm::ch::runtime::shutdown_vm(&store, name).await?;
+async fn stop_vm(name: &str) -> eyre::Result<()> {
+    tvm::ch::runtime::shutdown_vm(name).await?;
     Ok(())
 }
 
@@ -248,7 +247,7 @@ async fn run_apiserver(store: Store, listen: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn run_unitserver(store: Store, dns_listener: &str) -> eyre::Result<()> {
+async fn run_unitserver(store: Store, dns_listener: &str, api_server: &str) -> eyre::Result<()> {
     let (shutdown_send, shutdown_recv) = mpsc::channel(1);
     let (terminated_send, mut terminated_recv) = mpsc::channel(1);
 
@@ -256,6 +255,7 @@ async fn run_unitserver(store: Store, dns_listener: &str) -> eyre::Result<()> {
         shutdown_signal: shutdown_recv,
         store,
         dns_listener: dns_listener.into(),
+        api_server: api_server.into(),
     };
 
     let worker = tvm::unitserver::main(config, terminated_send);
@@ -319,7 +319,7 @@ async fn run_all(store: Store, listen: &str, listen_dns: &str) -> eyre::Result<(
     let dns_listener = listen_dns.split(':').next().unwrap();
     let res = tokio::join!(
         run_apiserver(store.clone(), listen),
-        run_unitserver(store.clone(), dns_listener),
+        run_unitserver(store.clone(), dns_listener, listen),
         run_dnsserver(store, listen_dns),
     );
     if res.0.is_err() {
@@ -343,16 +343,28 @@ pub async fn main() -> eyre::Result<()> {
         .filter_module("trust_dns_server", LevelFilter::Info)
         .init();
 
-    let store = Store::new(cli.store.clone())?;
-
     match &cli.command {
-        Commands::Internal { command } => internal_command(command, store).await,
-        Commands::Systemd { command } => systemd_command(command, store).await,
-        Commands::Start { name } => start_vm(store, name).await,
-        Commands::Stop { name } => stop_vm(store, name).await,
-        Commands::ApiServer { listen } => run_apiserver(store, listen).await,
-        Commands::DnsServer { listen } => run_dnsserver(store, listen).await,
-        Commands::UnitServer { dns_listener } => run_unitserver(store, dns_listener).await,
-        Commands::Serve { listen, listen_dns } => run_all(store, listen, listen_dns).await,
+        Commands::Systemd {
+            api_server,
+            command,
+        } => systemd_command(command, api_server).await,
+        Commands::Start { name } => start_vm(name).await,
+        Commands::Stop { name } => stop_vm(name).await,
+
+        cmd => {
+            let store = Store::new(cli.store.clone())?;
+
+            match cmd {
+                Commands::Internal { command } => internal_command(command, store).await,
+                Commands::ApiServer { listen } => run_apiserver(store, listen).await,
+                Commands::DnsServer { listen } => run_dnsserver(store, listen).await,
+                Commands::UnitServer {
+                    dns_listener,
+                    api_server,
+                } => run_unitserver(store, dns_listener, api_server).await,
+                Commands::Serve { listen, listen_dns } => run_all(store, listen, listen_dns).await,
+                _ => todo!(),
+            }
+        }
     }
 }

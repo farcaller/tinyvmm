@@ -1,6 +1,7 @@
 mod apiserver;
 mod ch;
 mod cli;
+pub mod client;
 mod database;
 mod dbus;
 mod dns;

@@ -10,16 +10,14 @@ use vmm::vm_config::{
     PayloadConfig, RngConfig, VmConfig,
 };
 
-use crate::database::{entity::Entity, store::Store, virtual_machine::VirtualMachine};
+use crate::database::virtual_machine::VirtualMachine;
 
 use super::{error::Error, get_vm_tap_name};
 
 // TODO: make configurable
 const HYPERVISOR_FW: &str = "/var/lib/tinyvmm/hypervisor";
 
-pub async fn bootstrap_vm(store: &Store, name: &str) -> Result<(), Error> {
-    let vm = VirtualMachine::get(store, name)?;
-
+pub async fn bootstrap_vm(vm: &VirtualMachine, name: &str) -> Result<(), Error> {
     let params = VmConfig {
         cpus: CpusConfig {
             boot_vcpus: vm.spec.cpus,

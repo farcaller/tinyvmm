@@ -10,11 +10,12 @@ pub struct Config {
     pub shutdown_signal: Receiver<()>,
     pub store: Store,
     pub dns_listener: String,
+    pub api_server: String,
 }
 
-async fn reconcile(store: &Store, dns_listener: &str) {
+async fn reconcile(store: &Store, dns_listener: &str, api_server: &str) {
     info!("reconciling vm units");
-    let res = virtualmachines::reconcile(store).await;
+    let res = virtualmachines::reconcile(store, api_server).await;
     if let Err(e) = res {
         warn!("failed reconciling vm units: {}", e);
     }
@@ -31,7 +32,7 @@ pub async fn main(mut config: Config, shutdown: Sender<eyre::Result<()>>) -> eyr
     let mut subscriber = config.store.watch_entities("/");
 
     tokio::spawn(async move {
-        reconcile(&config.store, &config.dns_listener).await;
+        reconcile(&config.store, &config.dns_listener, &config.api_server).await;
         while let Some(event) = (&mut subscriber).await {
             debug!(
                 "unit reconciler event: {}",
@@ -39,7 +40,7 @@ pub async fn main(mut config: Config, shutdown: Sender<eyre::Result<()>>) -> eyr
                     .or_else(|_| Ok::<String, ()>("?".into()))
                     .unwrap()
             );
-            reconcile(&config.store, &config.dns_listener).await;
+            reconcile(&config.store, &config.dns_listener, &config.api_server).await;
         }
     });
 

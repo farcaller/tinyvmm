@@ -11,7 +11,7 @@ use zbus::Connection;
 
 use super::error::SystemdUnitCreationError;
 
-use crate::{database::store::Store, dbus::systemd::SystemdProxy};
+use crate::dbus::systemd::SystemdProxy;
 
 const RUNTIME_NETWORK_DIR: &str = "/run/systemd/system";
 
@@ -43,10 +43,10 @@ async fn create_and_start_systemd_unit(
 pub async fn create_vm_service(
     name: &str,
     bridge_name: &str,
-    store: &Store,
     self_exe: &str,
+    api_server: &str,
 ) -> Result<(), SystemdUnitCreationError> {
-    let units = generate_vm_service(name, bridge_name, store, self_exe).await?;
+    let units = generate_vm_service(name, bridge_name, self_exe, api_server).await?;
     for (name, config) in units {
         create_and_start_systemd_unit(&name, &config).await?;
     }
@@ -68,10 +68,10 @@ pub async fn start_service(name: &str) -> Result<(), SystemdUnitCreationError> {
 pub async fn has_diffs(
     name: &str,
     bridge_name: &str,
-    store: &Store,
     self_exe: &str,
+    api_server: &str,
 ) -> Result<bool, SystemdUnitCreationError> {
-    let units = generate_vm_service(name, bridge_name, store, self_exe).await?;
+    let units = generate_vm_service(name, bridge_name, self_exe, api_server).await?;
     for (name, config) in units {
         let path = get_unit_path(&name);
         if !path.exists() {
@@ -90,8 +90,8 @@ pub async fn has_diffs(
 pub async fn generate_vm_service(
     name: &str,
     bridge_name: &str,
-    store: &Store,
     self_exe: &str,
+    api_server: &str,
 ) -> Result<HashMap<String, String>, SystemdUnitCreationError> {
     let mut res = HashMap::new();
 
@@ -107,10 +107,10 @@ pub async fn generate_vm_service(
             Type=simple
             ExecStart=/run/wrappers/bin/cloud-hypervisor --api-socket=${RUNTIME_DIRECTORY}/api.sock
 
-            ExecStartPost={{self_exe}} --store {{store}} systemd bootstrap-post {{name}}
-            ExecStartPost={{self_exe}} --store {{store}} start {{name}}
+            ExecStartPost={{self_exe}} systemd --api-server {{api_server}} bootstrap-post {{name}}
+            ExecStartPost={{self_exe}} start {{name}}
 
-            ExecStop={{self_exe}} --store {{store}} stop {{name}}
+            ExecStop={{self_exe}} stop {{name}}
 
             RuntimeDirectory=tinyvmi-{{name}}
             "#},
@@ -119,7 +119,7 @@ pub async fn generate_vm_service(
             "self_exe": format!("{}", std::fs::canonicalize(self_exe).unwrap().to_string_lossy()),
             "netbr": bridge_name,
             "netdev": get_systemd_tap_unit_name(name),
-            "store": store.store_path.clone().into_os_string().into_string().map_err(SystemdUnitCreationError::PathConversion)?,
+            "api_server": api_server,
         }),
     )?;
 
@@ -135,14 +135,15 @@ pub async fn generate_vm_service(
             [Service]
             Type=oneshot
             RemainAfterExit=yes
-            ExecStart={{self_exe}} systemd bootstrap-pre {{name}}
-            ExecStop={{self_exe}} systemd teardown {{name}}
+            ExecStart={{self_exe}} systemd --api-server {{api_server}} bootstrap-pre {{name}}
+            ExecStop={{self_exe}} systemd --api-server {{api_server}} teardown {{name}}
             "},
         &json!({
             "name": name,
             "self_exe": format!("{}", std::fs::canonicalize(self_exe).unwrap().to_string_lossy()),
             "netbr": bridge_name,
             "vmservice": get_systemd_unit_name(name),
+            "api_server": api_server,
         }),
     )?;
 

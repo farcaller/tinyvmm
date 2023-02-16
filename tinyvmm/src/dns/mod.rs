@@ -67,7 +67,7 @@ impl DnsHandler {
             let mut subscriber = store.watch_entities("/");
             {
                 let mut authority_map = authority.lock().await;
-                let err = DnsHandler::reconcile(&store, &mut authority_map, catalog.clone()).await;
+                let _err = DnsHandler::reconcile(&store, &mut authority_map, catalog.clone()).await;
             }
 
             while let Some(event) = (&mut subscriber).await {

@@ -98,15 +98,16 @@
             systemd.services.tinyvmm = {
               wantedBy = [ "multi-user.target" ];
               script = ''
-                ${self.packages.${pkgs.system}.default}/bin/tinyvmm serve \
-                --reconcile-delay 10 \
+                ${self.packages.${pkgs.system}.default}/bin/tinyvmm \
+                --store ''${STATE_DIRECTORY}/store.db \
+                serve \
                 --listen ''${RUNTIME_DIRECTORY}/sock \
                 --listen-dns "${cfg.dnsAddress}" \
                 -vvv
               '';
               serviceConfig = {
                 RuntimeDirectory = [ "tinyvmm" ];
-                StateDirectory = [ "tinyvmm" ]; # TODO: expose via a flag
+                StateDirectory = [ "tinyvmm" ];
               };
             };
           };

@@ -1,7 +1,7 @@
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::value::Value;
 
-use super::{create_entity, delete_entity, error::Error, get_entity, get_kind, serde::ValueGetter};
+use super::{error::Error, serde::ValueGetter, store::Store};
 
 pub trait Entity {
     const KIND: &'static str;
@@ -28,11 +28,13 @@ pub trait Entity {
         }
     }
 
-    fn get<T>(runtime_dir: &str, name: T) -> Result<Self::Type, super::error::Error>
+    fn get<T>(store: &Store, name: T) -> Result<Self::Type, super::error::Error>
     where
         T: AsRef<str>,
     {
-        let entity = get_entity(runtime_dir, Self::KIND, name.as_ref())?;
+        let entity = store
+            .get_entity(Self::KIND, name.as_ref())
+            .and_then(|e| e.ok_or(Error::NotFound))?;
         let entity = Self::migrate_version(entity)?;
 
         let unwrapped: Self::Type = serde_json::value::from_value(entity)?;
@@ -40,17 +42,17 @@ pub trait Entity {
         Ok(unwrapped)
     }
 
-    fn delete<T>(runtime_dir: &str, name: T) -> Result<(), super::error::Error>
+    fn delete<T>(store: &Store, name: T) -> Result<(), super::error::Error>
     where
         T: AsRef<str>,
     {
-        delete_entity(runtime_dir, Self::KIND, name.as_ref())?;
+        store.delete_entity(Self::KIND, name.as_ref())?;
 
         Ok(())
     }
 
-    fn list(runtime_dir: &str) -> Result<Vec<Self::Type>, super::error::Error> {
-        let entities = get_kind(runtime_dir, Self::KIND)?;
+    fn list(store: &Store) -> Result<Vec<Self::Type>, super::error::Error> {
+        let entities = store.get_kind(Self::KIND)?;
 
         let mut vms = vec![];
         for entity in entities {
@@ -62,12 +64,12 @@ pub trait Entity {
         Ok(vms)
     }
 
-    fn create(&self, runtime_dir: &str) -> Result<(), super::error::Error>
+    fn create(&self, store: &Store) -> Result<(), super::error::Error>
     where
         Self: Serialize,
     {
         let val = serde_json::value::to_value(self)?;
-        create_entity(runtime_dir, val)?;
+        store.create_entity(val)?;
         Ok(())
     }
 }

@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use hyper::{Body, Client, Method, Request};
 use hyperlocal::{UnixClientExt, Uri};
 
-use crate::database::{entity::Entity, virtual_machine::VirtualMachine};
+use crate::database::{entity::Entity, store::Store, virtual_machine::VirtualMachine};
 
 use super::error::Error;
 
-pub async fn start_vm(runtime_dir: &str, name: &str) -> Result<(), Error> {
-    let _vm = VirtualMachine::get(runtime_dir, name)?;
+pub async fn start_vm(store: &Store, name: &str) -> Result<(), Error> {
+    let _vm = VirtualMachine::get(store, name)?;
 
     let url = Uri::new(
         PathBuf::from("/run")
@@ -37,8 +37,8 @@ pub async fn start_vm(runtime_dir: &str, name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn shutdown_vm(runtime_dir: &str, name: &str) -> Result<(), Error> {
-    let _vm = VirtualMachine::get(runtime_dir, name)?;
+pub async fn shutdown_vm(store: &Store, name: &str) -> Result<(), Error> {
+    let _vm = VirtualMachine::get(store, name)?;
 
     let api_path = PathBuf::from("/run")
         .join(format!("tinyvmi-{}", name))

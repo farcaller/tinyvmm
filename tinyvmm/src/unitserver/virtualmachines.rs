@@ -1,14 +1,14 @@
 use log::{debug, info, trace, warn};
 
 use crate::{
-    database::{entity::Entity, virtual_machine::VirtualMachine},
+    database::{entity::Entity, store::Store, virtual_machine::VirtualMachine},
     systemd,
 };
 
-pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
+pub async fn reconcile(store: &Store) -> eyre::Result<()> {
     let self_exe = &std::env::args().next().unwrap();
 
-    let vms = VirtualMachine::list(runtime_dir)?;
+    let vms = VirtualMachine::list(store)?;
 
     debug!("got {} vms to reconcile", vms.len());
 
@@ -20,14 +20,13 @@ pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
 
         debug!("reconciling vm {name}");
 
-        let has_diffs = systemd::has_diffs(name, bridge_name, runtime_dir, self_exe).await;
+        let has_diffs = systemd::has_diffs(name, bridge_name, store, self_exe).await;
         debug!("vm {name} diffs: {has_diffs:?}");
         match has_diffs {
             Err(e) => {
                 info!("failed to check for diffs for {}: {}", name, e);
                 info!("will try to reconcile");
-                if let Err(e) =
-                    systemd::create_vm_service(name, bridge_name, runtime_dir, self_exe).await
+                if let Err(e) = systemd::create_vm_service(name, bridge_name, store, self_exe).await
                 {
                     warn!("systemd::create_vm_service failed for {}: {}", name, e);
                 }
@@ -38,8 +37,7 @@ pub async fn reconcile(runtime_dir: &str) -> eyre::Result<()> {
             }
             Ok(true) => {
                 info!("{} changed, will try to reconcile", name);
-                if let Err(e) =
-                    systemd::create_vm_service(name, bridge_name, runtime_dir, self_exe).await
+                if let Err(e) = systemd::create_vm_service(name, bridge_name, store, self_exe).await
                 {
                     warn!("systemd::create_vm_service failed for {}: {}", name, e);
                 }

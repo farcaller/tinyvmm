@@ -24,15 +24,9 @@ log = { version = "0.4.17" }
 regex = "1.7.0"
 ring = "0.16.20"
 rtnetlink = "0.11.0"
-rusqlite = { version = "0.28.0", features = [
-  "functions",
-  "serde_json",
-  "bundled",
-] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_ini = "0.2.0"
 serde_json = "1.0.91"
-# systemd_client = "0.2.1"
 thiserror = "^1.0"
 tokio = { version = "1.23.0", features = ["full", "tracing"] }
 vmm = { git = "https://github.com/cloud-hypervisor/cloud-hypervisor", tag = "v28.1", version = "0.1.0", features = [
@@ -51,6 +45,7 @@ trust-dns-server = "0.22.0"
 async-trait = "0.1.64"
 trust-dns-proto = "0.22.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
+sled = "0.34.7"
 
 [build-dependencies]
 clap = { version = "^4.0", features = ["derive"] }

@@ -1,47 +1,44 @@
 use actix_web::{delete, get, post, web, Responder};
 use serde_valid::json::FromJsonValue;
 
-use crate::{
-    apiserver::RuntimeDir,
-    database::{bridge::Bridge, entity::Entity},
-};
+use crate::database::{bridge::Bridge, entity::Entity, store::Store};
 
 #[get("")]
 async fn list_bridges(
-    runtime_dir: web::Data<RuntimeDir>,
+    store: web::Data<Store>,
 ) -> Result<impl Responder, Box<dyn std::error::Error>> {
-    let vms = Bridge::list(&runtime_dir.0)?;
+    let vms = Bridge::list(&store)?;
 
     Ok(web::Json(vms))
 }
 
 #[get("{name}")]
 async fn get_bridge(
-    runtime_dir: web::Data<RuntimeDir>,
+    store: web::Data<Store>,
     path: web::Path<String>,
 ) -> Result<impl Responder, Box<dyn std::error::Error>> {
-    let vms = Bridge::get(&runtime_dir.0, path.into_inner())?;
+    let vms = Bridge::get(&store, path.into_inner())?;
 
     Ok(web::Json(vms))
 }
 
 #[delete("{name}")]
 async fn delete_bridge(
-    runtime_dir: web::Data<RuntimeDir>,
+    store: web::Data<Store>,
     path: web::Path<String>,
 ) -> Result<impl Responder, Box<dyn std::error::Error>> {
-    Bridge::delete(&runtime_dir.0, path.into_inner())?;
+    Bridge::delete(&store, path.into_inner())?;
 
     Ok(web::Bytes::from(""))
 }
 
 #[post("")]
 async fn create_bridge(
-    runtime_dir: web::Data<RuntimeDir>,
+    store: web::Data<Store>,
     vm: web::Json<serde_json::Value>,
 ) -> Result<impl Responder, Box<dyn std::error::Error>> {
     let vm = Bridge::from_json_value(vm.0)?;
-    vm.create(&runtime_dir.0)?;
+    vm.create(&store)?;
 
     Ok(web::Json(vm))
 }

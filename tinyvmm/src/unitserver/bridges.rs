@@ -1,11 +1,11 @@
 use crate::{
-    database::{bridge::Bridge, entity::Entity, virtual_machine::VirtualMachine},
+    database::{bridge::Bridge, entity::Entity, store::Store, virtual_machine::VirtualMachine},
     systemd::bridge::{create_bridge, create_bridge_network, Lease},
 };
 
-pub async fn reconcile(runtime_dir: &str, dns_listener: &str) -> eyre::Result<()> {
-    let bridges = Bridge::list(runtime_dir)?;
-    let vms = VirtualMachine::list(runtime_dir)?;
+pub async fn reconcile(store: &Store, dns_listener: &str) -> eyre::Result<()> {
+    let bridges = Bridge::list(store)?;
+    let vms = VirtualMachine::list(store)?;
 
     // generate the units for existing bridges and check the diffs
     // if there are any diffs, commit, daemon-reload and start them

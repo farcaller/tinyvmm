@@ -29,4 +29,7 @@ pub enum SystemdUnitCreationError {
 
     #[error("template render error: {0}")]
     Handlebars(#[from] handlebars::RenderError),
+
+    #[error("failed to convert the path: {0:?}")]
+    PathConversion(std::ffi::OsString),
 }

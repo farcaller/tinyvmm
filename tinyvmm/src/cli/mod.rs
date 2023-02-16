@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{
     self as tvm,
-    database::{entity::Entity, virtual_machine::VirtualMachine},
+    database::{entity::Entity, store::Store, virtual_machine::VirtualMachine},
 };
 use clap::{Parser, Subcommand};
 use log::{debug, LevelFilter};
@@ -16,8 +16,8 @@ use tokio::{
 struct Cli {
     #[clap(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
-    #[clap(long, default_value = "/var/lib/tinyvmm")]
-    runtime_dir: String,
+    #[clap(long, default_value = "/var/lib/tinyvmm/store.db")]
+    store: String,
 
     #[command(subcommand)]
     command: Commands,
@@ -130,10 +130,11 @@ enum NetworkdCommand {
     Describe { name: String },
 }
 
-async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Result<()> {
+async fn internal_command(cmd: &InternalCommands, store: Store) -> eyre::Result<()> {
     use BridgeCommands as br;
     use InternalCommands::*;
     use TapCommands as tap;
+
     match cmd {
         Bridge {
             command:
@@ -145,7 +146,7 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
                     dns_server,
                 },
         } => {
-            let vms = VirtualMachine::list(runtime_dir)?;
+            let vms = VirtualMachine::list(&store)?;
             let mut leases = vec![];
             for vm in vms {
                 leases.push(tvm::systemd::bridge::Lease {
@@ -185,7 +186,7 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
             tvm::systemd::create_vm_service(
                 name,
                 bridge_name,
-                runtime_dir,
+                &store,
                 &std::env::args().next().unwrap(),
             )
             .await?;
@@ -195,18 +196,19 @@ async fn internal_command(cmd: &InternalCommands, runtime_dir: &str) -> eyre::Re
     Ok(())
 }
 
-async fn systemd_command(cmd: &SystemdCommands, runtime_dir: &str) -> eyre::Result<()> {
+async fn systemd_command(cmd: &SystemdCommands, store: Store) -> eyre::Result<()> {
     use SystemdCommands::*;
+
     match cmd {
         BootstrapPre { name } => {
             let tap_name = tvm::ch::get_vm_tap_name(name);
 
-            let vm = VirtualMachine::get(runtime_dir, name)?;
+            let vm = VirtualMachine::get(&store, name)?;
 
             tvm::systemd::tap::create_tap(&tap_name, &vm.spec.mac).await?;
             tvm::systemd::tap::create_tap_network(&tap_name, &vm.spec.bridge, &vm.spec.mac).await?;
         }
-        BootstrapPost { name } => tvm::ch::bootstrap::bootstrap_vm(runtime_dir, name).await?,
+        BootstrapPost { name } => tvm::ch::bootstrap::bootstrap_vm(&store, name).await?,
         Teardown { name } => tvm::systemd::destroy_netdev(&tvm::ch::get_vm_tap_name(name)).await?,
     }
     Ok(())
@@ -237,23 +239,23 @@ async fn networkd_command(cmd: &NetworkdCommand) -> eyre::Result<()> {
     }
 }
 
-async fn start_vm(runtime_dir: &str, name: &str) -> eyre::Result<()> {
-    tvm::ch::runtime::start_vm(runtime_dir, name).await?;
+async fn start_vm(store: Store, name: &str) -> eyre::Result<()> {
+    tvm::ch::runtime::start_vm(&store, name).await?;
     Ok(())
 }
 
-async fn stop_vm(runtime_dir: &str, name: &str) -> eyre::Result<()> {
-    tvm::ch::runtime::shutdown_vm(runtime_dir, name).await?;
+async fn stop_vm(store: Store, name: &str) -> eyre::Result<()> {
+    tvm::ch::runtime::shutdown_vm(&store, name).await?;
     Ok(())
 }
 
-async fn run_apiserver(runtime_dir: &str, listen: &str) -> eyre::Result<()> {
-    tvm::apiserver::run_server(listen, runtime_dir.into()).await?;
+async fn run_apiserver(store: Store, listen: &str) -> eyre::Result<()> {
+    tvm::apiserver::run_server(listen, store).await?;
     Ok(())
 }
 
 async fn run_unitserver(
-    runtime_dir: &str,
+    store: Store,
     reconcile_delay: u64,
     dns_listener: &str,
 ) -> eyre::Result<()> {
@@ -263,7 +265,7 @@ async fn run_unitserver(
     let config = tvm::unitserver::Config {
         reconcile_delay: Duration::from_secs(reconcile_delay),
         shutdown_signal: shutdown_recv,
-        runtime_dir: runtime_dir.into(),
+        store,
         dns_listener: dns_listener.into(),
     };
 
@@ -294,12 +296,12 @@ async fn run_unitserver(
     terminated_recv.recv().await.unwrap()
 }
 
-async fn run_dnsserver(runtime_dir: &str, reconcile_delay: u64, listen: &str) -> eyre::Result<()> {
+async fn run_dnsserver(store: Store, reconcile_delay: u64, listen: &str) -> eyre::Result<()> {
     let (shutdown_send, shutdown_recv) = mpsc::channel(1);
 
     let worker = tvm::dns::run_server(
         listen.parse()?,
-        runtime_dir.into(),
+        store,
         Duration::from_secs(reconcile_delay),
         shutdown_recv,
     );
@@ -330,16 +332,16 @@ async fn run_dnsserver(runtime_dir: &str, reconcile_delay: u64, listen: &str) ->
 }
 
 async fn run_all(
-    runtime_dir: &str,
+    store: Store,
     listen: &str,
     listen_dns: &str,
     reconcile_delay: u64,
 ) -> eyre::Result<()> {
     let dns_listener = listen_dns.split(':').next().unwrap();
     let res = tokio::join!(
-        run_apiserver(runtime_dir, listen),
-        run_unitserver(runtime_dir, reconcile_delay, dns_listener),
-        run_dnsserver(runtime_dir, reconcile_delay, listen_dns),
+        run_apiserver(store.clone(), listen),
+        run_unitserver(store.clone(), reconcile_delay, dns_listener),
+        run_dnsserver(store, reconcile_delay, listen_dns),
     );
     if res.0.is_err() {
         res.0
@@ -361,24 +363,26 @@ pub async fn main() -> eyre::Result<()> {
         .filter_module("trust_dns_server", LevelFilter::Info)
         .init();
 
+    let store = Store::new(cli.store.clone())?;
+
     match &cli.command {
-        Commands::Internal { command } => internal_command(command, &cli.runtime_dir).await,
-        Commands::Systemd { command } => systemd_command(command, &cli.runtime_dir).await,
-        Commands::Start { name } => start_vm(&cli.runtime_dir, name).await,
-        Commands::Stop { name } => stop_vm(&cli.runtime_dir, name).await,
-        Commands::ApiServer { listen } => run_apiserver(&cli.runtime_dir, listen).await,
+        Commands::Internal { command } => internal_command(command, store).await,
+        Commands::Systemd { command } => systemd_command(command, store).await,
+        Commands::Start { name } => start_vm(store, name).await,
+        Commands::Stop { name } => stop_vm(store, name).await,
+        Commands::ApiServer { listen } => run_apiserver(store, listen).await,
         Commands::DnsServer {
             reconcile_delay,
             listen,
-        } => run_dnsserver(&cli.runtime_dir, *reconcile_delay, listen).await,
+        } => run_dnsserver(store, *reconcile_delay, listen).await,
         Commands::UnitServer {
             reconcile_delay,
             dns_listener,
-        } => run_unitserver(&cli.runtime_dir, *reconcile_delay, dns_listener).await,
+        } => run_unitserver(store, *reconcile_delay, dns_listener).await,
         Commands::Serve {
             listen,
             listen_dns,
             reconcile_delay,
-        } => run_all(&cli.runtime_dir, listen, listen_dns, *reconcile_delay).await,
+        } => run_all(store, listen, listen_dns, *reconcile_delay).await,
     }
 }

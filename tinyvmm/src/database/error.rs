@@ -2,9 +2,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("database error: {0}")]
-    Database(#[from] rusqlite::Error),
-
     #[error("serialize error: {0}")]
     Serialize(#[from] serde_json::Error),
 
@@ -29,4 +26,13 @@ pub enum Error {
         kind: &'static str,
         version: &'static str,
     },
+
+    #[error("storage error: {0}")]
+    SledError(#[from] sled::Error),
+
+    #[error("an entity already exists for {kind}/{name}")]
+    KeyExists { kind: String, name: String },
+
+    #[error("entity not found")]
+    NotFound,
 }

@@ -24,14 +24,16 @@ use trust_dns_server::{
     ServerFuture,
 };
 
-use crate::database::{bridge::Bridge, entity::Entity, virtual_machine::VirtualMachine};
+use crate::database::{
+    bridge::Bridge, entity::Entity, store::Store, virtual_machine::VirtualMachine,
+};
 
 use self::error::Error;
 
 struct DnsHandler {
     authority: Arc<Mutex<HashMap<String, Arc<InMemoryAuthority>>>>,
     catalog: Arc<Mutex<Catalog>>,
-    runtime_dir: String,
+    store: Store,
     reconcile_delay: Duration,
 }
 
@@ -48,42 +50,43 @@ impl RequestHandler for DnsHandler {
 }
 
 impl DnsHandler {
-    pub fn new(runtime_dir: String, reconcile_delay: Duration) -> Result<Self, Error> {
+    pub fn new(store: Store, reconcile_delay: Duration) -> Result<Self, Error> {
         let catalog = Catalog::new();
 
         Ok(DnsHandler {
             authority: Arc::new(Mutex::new(HashMap::new())),
             catalog: Arc::new(Mutex::new(catalog)),
-            runtime_dir,
+            store,
             reconcile_delay,
         })
     }
 
-    pub async fn run(&self) -> JoinHandle<()> {
-        let runtime_dir = self.runtime_dir.clone();
+    pub async fn run(&self) -> eyre::Result<JoinHandle<()>> {
         let authority = self.authority.clone();
-        let reconcile_delay = self.reconcile_delay;
         let catalog = self.catalog.clone();
-        tokio::spawn(async move {
+        let store = self.store.clone();
+        let reconcile_delay = self.reconcile_delay.clone();
+
+        Ok(tokio::spawn(async move {
             loop {
                 let mut authority_map = authority.lock().await;
-                let err =
-                    DnsHandler::reconcile(&runtime_dir, &mut authority_map, catalog.clone()).await;
+                let subscriber = store.watch_entities("/");
+                let err = DnsHandler::reconcile(&store, &mut authority_map, catalog.clone()).await;
                 if let Err(err) = err {
                     error!("failed to reconcile the dns: {}", err);
                 }
                 tokio::time::sleep(reconcile_delay).await;
             }
-        })
+        }))
     }
 
     async fn reconcile(
-        runtime_dir: &str,
+        store: &Store,
         authority: &mut HashMap<String, Arc<InMemoryAuthority>>,
         catalog: Arc<Mutex<Catalog>>,
     ) -> Result<(), Error> {
-        let bridges = Bridge::list(runtime_dir)?;
-        let vms = VirtualMachine::list(runtime_dir)?;
+        let bridges = Bridge::list(store)?;
+        let vms = VirtualMachine::list(store)?;
 
         for bridge in bridges {
             let vms = vms
@@ -128,13 +131,13 @@ impl DnsHandler {
 
 pub async fn run_server(
     addr: SocketAddr,
-    runtime_dir: String,
+    store: Store,
     reconcile_delay: Duration,
     mut shutdown_signal: Receiver<()>,
 ) -> eyre::Result<()> {
     info!("starting the dns server");
 
-    let handler = DnsHandler::new(runtime_dir, reconcile_delay)?;
+    let handler = DnsHandler::new(store, reconcile_delay)?;
 
     let _h = handler.run().await;
 

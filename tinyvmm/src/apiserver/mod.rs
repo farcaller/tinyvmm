@@ -1,22 +1,26 @@
 use actix_web::{web, App, HttpServer};
+use eyre::Context;
 use log::info;
+
+use crate::database::store::Store;
 
 mod bridges;
 mod virtualmachines;
 
-pub(crate) struct RuntimeDir(String);
-pub async fn run_server<P>(uds_path: P, runtime_dir: String) -> std::io::Result<()>
+pub async fn run_server<P>(uds_path: P, store: Store) -> eyre::Result<()>
 where
     P: AsRef<std::path::Path>,
 {
     info!("starting the api server");
-    HttpServer::new(move || {
+
+    let server = HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(RuntimeDir(runtime_dir.clone())))
+            .app_data(web::Data::new(store.clone()))
             .configure(virtualmachines::vms_apis)
             .configure(bridges::bridges_apis)
     })
-    .bind_uds(uds_path)?
-    .run()
-    .await
+    .bind_uds(uds_path)
+    .wrap_err("failed to bind the api server listener")?;
+
+    server.run().await.wrap_err("failed to run the api server")
 }

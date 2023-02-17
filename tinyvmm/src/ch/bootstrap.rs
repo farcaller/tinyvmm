@@ -2,6 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use backoff::ExponentialBackoffBuilder;
 use byte_unit::Byte;
+use data_encoding::HEXUPPER;
 use hyper::{Body, Client, Method, Request};
 use hyperlocal::{UnixClientExt, Uri};
 use net_util::MacAddr;
@@ -16,6 +17,14 @@ use super::{error::Error, get_vm_tap_name};
 
 // TODO: make configurable
 const HYPERVISOR_FW: &str = "/var/lib/tinyvmm/hypervisor";
+
+fn digest(path: &str) -> String {
+    let mut context = ring::digest::Context::new(&ring::digest::SHA256);
+    context.update(path.as_bytes());
+    let digest = context.finish();
+
+    HEXUPPER.encode(digest.as_ref())
+}
 
 pub async fn bootstrap_vm(vm: &VirtualMachine, name: &str) -> Result<(), Error> {
     let params = VmConfig {
@@ -39,6 +48,7 @@ pub async fn bootstrap_vm(vm: &VirtualMachine, name: &str) -> Result<(), Error> 
                 .iter()
                 .map(|d| DiskConfig {
                     path: Some(PathBuf::from(d)),
+                    id: Some(digest(d)),
                     ..Default::default()
                 })
                 .collect(),

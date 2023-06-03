@@ -105,7 +105,7 @@ pub async fn generate_vm_service(
 
             [Service]
             Type=simple
-            ExecStart=/run/wrappers/bin/cloud-hypervisor --api-socket=${RUNTIME_DIRECTORY}/api.sock
+            ExecStart=/run/wrappers/bin/cloud-hypervisor --api-socket path=${RUNTIME_DIRECTORY}/api.sock
 
             ExecStartPost={{self_exe}} systemd --api-server {{api_server}} bootstrap-post {{name}}
             ExecStartPost={{self_exe}} start {{name}}

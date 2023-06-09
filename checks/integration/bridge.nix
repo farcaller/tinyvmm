@@ -1,8 +1,8 @@
-{ nixosModule }: {
+self: {
   name = "bridge";
 
   nodes.vmm = { config, pkgs, ... }: {
-    imports = [ nixosModule ];
+    imports = [ self.nixosModule.default ];
     systemd.network.enable = true;
 
     environment.systemPackages = with pkgs; [

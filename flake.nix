@@ -12,69 +12,114 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+    nixos-generators = {
+      url = "github:nix-community/nixos-generators";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, devenv, fenix, flake-utils, crane, ... } @ inputs:
+  outputs =
+    { self
+    , nixpkgs
+    , devenv
+    , fenix
+    , flake-utils
+    , crane
+    , nixos-generators
+    , ...
+    } @ inputs:
     flake-utils.lib.eachSystem [ flake-utils.lib.system.x86_64-linux ]
       (system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-          rustVersion = "stable";
-          fenixPkgs = fenix.packages.${system}.${rustVersion};
-          toolchain = fenixPkgs.toolchain;
-          craneLib = crane.lib.${system}.overrideToolchain toolchain;
-          runtimeInputs = with pkgs; [
-            cloud-hypervisor
-            nftables
-          ];
-          buildInputs = with pkgs; [
-            mold
-            clang
-          ];
-          commonArgs = {
-            inherit buildInputs;
-            src = craneLib.cleanCargoSource ./.;
-            pname = "tinyvmm";
+      let
+        pkgs = import nixpkgs { inherit system; };
+        rustVersion = "stable";
+        fenixPkgs = fenix.packages.${system}.${rustVersion};
+        toolchain = fenixPkgs.toolchain;
+        craneLib = crane.lib.${system}.overrideToolchain toolchain;
+        runtimeInputs = with pkgs; [
+          cloud-hypervisor
+          nftables
+        ];
+        buildInputs = with pkgs; [
+          mold
+          clang
+        ];
+        commonArgs = {
+          inherit buildInputs;
+          src = craneLib.cleanCargoSource ./.;
+          pname = "tinyvmm";
+        };
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          pname = "tinyvmm-deps";
+        });
+        tinyvmmClippy = craneLib.cargoClippy (commonArgs // {
+          inherit cargoArtifacts;
+          cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+        });
+        tinyvmmCoverage = craneLib.cargoTarpaulin (commonArgs // {
+          inherit cargoArtifacts;
+        });
+        tinyvmm = craneLib.buildPackage (commonArgs // {
+          inherit cargoArtifacts;
+        });
+      in
+      {
+        packages = {
+          default = tinyvmm;
+          hypervisor-firmware = pkgs.fetchurl {
+            name = "hypervisor-firmware";
+            url = "https://github.com/cloud-hypervisor/rust-hypervisor-firmware/releases/download/0.4.2/hypervisor-fw";
+            sha256 = "sha256-WMFGE7xmBnI/GBJNAPujRk+vMx1ssGp//lbeYtgHEkA=";
           };
-          cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
-            pname = "tinyvmm-deps";
-          });
-          tinyvmmClippy = craneLib.cargoClippy (commonArgs // {
-            inherit cargoArtifacts ;
-            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
-          });
-          tinyvmmCoverage = craneLib.cargoTarpaulin (commonArgs // {
-            inherit cargoArtifacts;
-          });
-          tinyvmm = craneLib.buildPackage (commonArgs // {
-            inherit cargoArtifacts;
-          });
-        in
-        {
-          packages.default = tinyvmm;
-          checks = {
-            inherit tinyvmm tinyvmmClippy tinyvmmCoverage;
-            integration = pkgs.nixosTest (import ./checks/integration/bridge.nix { nixosModule = self.nixosModules.default; });
-          };
-          devShells.default = devenv.lib.mkShell {
-            inherit inputs pkgs;
+          test-vm = nixos-generators.nixosGenerate {
+            system = "x86_64-linux";
             modules = [
-              (
-                {
-                  languages.rust.enable = true;
-                  languages.rust.version = rustVersion;
-                  packages = with pkgs; [
-                    sqlite
-                    rustfmt
-                    cargo-whatfeatures
-                    cargo-watch
-                    fenixPkgs.clippy
-                  ] ++ runtimeInputs ++ buildInputs;
-                }
-              )
+              ({ config, ... }: {
+                system.stateVersion = "22.11";
+
+                networking.usePredictableInterfaceNames = false;
+                networking.interfaces.eth0.useDHCP = false;
+                networking.interfaces.eth0.ipv4.addresses = [{
+                  address = "10.0.0.2";
+                  prefixLength = 24;
+                }];
+                networking.defaultGateway = "10.0.0.1";
+                networking.nameservers = [ "8.8.8.8" ];
+
+                boot = {
+                  kernelParams = [ "console=ttyS0" "panic=1" "boot.panic_on_fail" ];
+                  initrd.kernelModules = [ "virtio_scsi" "virtio_pci" "virtio_net" ];
+                  kernelModules = [ "virtio_pci" "virtio_net" ];
+                };
+              })
             ];
+            format = "raw-efi";
           };
-        }
+        };
+        checks = {
+          inherit tinyvmm tinyvmmClippy tinyvmmCoverage;
+          integration.bridge = pkgs.nixosTest (import ./checks/integration/bridge.nix self);
+          integration.ch = pkgs.nixosTest (import ./checks/integration/ch.nix self);
+        };
+        devShells.default = devenv.lib.mkShell {
+          inherit inputs pkgs;
+          modules = [
+            (
+              {
+                languages.rust.enable = true;
+                languages.rust.version = rustVersion;
+                packages = with pkgs; [
+                  sqlite
+                  rustfmt
+                  cargo-whatfeatures
+                  cargo-watch
+                  fenixPkgs.clippy
+                ] ++ runtimeInputs ++ buildInputs;
+              }
+            )
+          ];
+        };
+      }
       ) // {
       nixosModules.default = { config, pkgs, lib, ... }:
         let

@@ -7,8 +7,8 @@ use hyper::{Body, Client, Method, Request};
 use hyperlocal::{UnixClientExt, Uri};
 use net_util::MacAddr;
 use vmm::vm_config::{
-    ConsoleConfig, ConsoleOutputMode, CpusConfig, DiskConfig, MemoryConfig, NetConfig,
-    PayloadConfig, RngConfig, VmConfig,
+    ConsoleConfig, ConsoleOutputMode, CpusConfig, DiskConfig, HotplugMethod, MemoryConfig,
+    NetConfig, PayloadConfig, RngConfig, VmConfig,
 };
 
 use crate::database::virtual_machine::VirtualMachine;
@@ -27,6 +27,14 @@ fn digest(path: &str) -> String {
 }
 
 pub async fn bootstrap_vm(vm: &VirtualMachine, name: &str) -> Result<(), Error> {
+    let mem_size = Byte::from_str(format!("{}iB", vm.spec.memory))?.get_bytes() as u64;
+    let constant_mem = 1_073_741_824; // 1GiB;
+    if mem_size < constant_mem {
+        return Err(Error::NotEnoughRam(mem_size));
+    }
+    let hotplug_initial_ram = mem_size - constant_mem;
+    let hotplug_max_ram = 34_359_738_368; // 32 GiB
+
     let params = VmConfig {
         cpus: CpusConfig {
             boot_vcpus: vm.spec.cpus,
@@ -35,7 +43,10 @@ pub async fn bootstrap_vm(vm: &VirtualMachine, name: &str) -> Result<(), Error> 
         },
         memory: MemoryConfig {
             // TODO: fix the memory parsing in the deserializer so that the number is always correct in here
-            size: Byte::from_str(format!("{}iB", vm.spec.memory))?.get_bytes() as u64,
+            size: constant_mem,
+            hotplug_method: HotplugMethod::VirtioMem,
+            hotplug_size: Some(hotplug_max_ram),
+            hotplugged_size: Some(hotplug_initial_ram),
             ..Default::default()
         },
         payload: Some(PayloadConfig {

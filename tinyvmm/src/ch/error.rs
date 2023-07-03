@@ -25,4 +25,7 @@ pub enum Error {
 
     #[error("utf8 error")]
     UTF8(#[from] std::str::Utf8Error),
+
+    #[error("not enough ram allocated: {0} bytes requested")]
+    NotEnoughRam(u64),
 }

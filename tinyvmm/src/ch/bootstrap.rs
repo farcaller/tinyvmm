@@ -63,12 +63,8 @@ pub async fn bootstrap_vm(vm: &VirtualMachine, name: &str) -> Result<(), Error> 
         fs: None,
         pmem: None,
         serial: ConsoleConfig {
-            file: Some(
-                PathBuf::from("/run")
-                    .join(format!("tinyvmi-{}", name))
-                    .join("serial"),
-            ),
-            mode: ConsoleOutputMode::File,
+            file: None,
+            mode: ConsoleOutputMode::Pty,
             iommu: false,
         },
         console: ConsoleConfig {
